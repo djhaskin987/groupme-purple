@@ -188,6 +188,8 @@ typedef struct {
 	gint frames_since_reconnect;
 	GSList *pending_writes;
 	gint roomlist_guild_count;
+
+	gchar *client_id;
 } GroupMeAccount;
 
 typedef struct {
@@ -416,6 +418,7 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 		if (json_object_has_member(response, "successful")) {
 			printf("Handshake success\n");
 			const gchar *clientId = json_object_get_string_member(response, "clientId");
+			da->client_id = g_strdup(clientId);
 			printf("Client ID: %s\n", clientId);
 
 			/* Client ID needed for websocketing */
@@ -1210,47 +1213,16 @@ static void groupme_mark_room_messages_read(GroupMeAccount *ya, guint64 room_id)
 static void
 groupme_send_auth(GroupMeAccount *da)
 {
-	JsonObject *obj = json_object_new();
 	JsonObject *data = json_object_new();
 
-	json_object_set_string_member(data, "token", da->token);
+	json_object_set_string_member(data, "channel", "/meta/connect");
+	json_object_set_string_member(data, "clientId", da->client_id);
+	json_object_set_string_member(data, "connectionType", "websocket");
+	json_object_set_string_member(data, "id", "2");
 
-	if (da->seq && da->session_id) {
-		json_object_set_int_member(obj, "op", 6);
+	groupme_socket_write_json(da, data);
 
-		json_object_set_string_member(data, "session_id", da->session_id);
-		json_object_set_int_member(data, "seq", da->seq);
-	} else {
-		JsonObject *properties = json_object_new();
-		JsonObject *presence = json_object_new();
-
-		json_object_set_int_member(obj, "op", 2);
-
-		json_object_set_boolean_member(data, "compress", FALSE);
-		json_object_set_int_member(data, "large_threshold", 25000);
-
-		json_object_set_string_member(properties, "os",
-#if defined(_WIN32)
-									  "Windows"
-#elif defined(__APPLE__)
-									  "OSX"
-#else
-									  "Linux"
-#endif
-									  );
-		json_object_set_string_member(properties, "browser", "Pidgin");
-		json_object_set_object_member(data, "properties", properties);
-
-		/* TODO real presence */
-		json_object_set_string_member(presence, "status", "online");
-		json_object_set_object_member(data, "presence", presence);
-	}
-
-	json_object_set_object_member(obj, "d", data);
-
-	groupme_socket_write_json(da, obj);
-
-	json_object_unref(obj);
+	json_object_unref(data);
 }
 
 static gboolean
@@ -3488,6 +3460,9 @@ groupme_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInp
 	purple_ssl_write(da->websocket, websocket_header, strlen(websocket_header));
 
 	g_free(websocket_header);
+
+	printf("Websocket headered\n");
+	groupme_send_auth(da);
 }
 
 static void
