@@ -3825,7 +3825,7 @@ groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_da
 		}
 
 #endif
-		rolling_last_message_id = groupme_process_message(da, channel, message, FALSE);
+		rolling_last_message_id = groupme_process_message(da, channel->id, message, FALSE);
 	}
 
 	if (rolling_last_message_id != 0) {
@@ -4470,10 +4470,13 @@ groupme_chat_send(PurpleConnection *pc, gint id,
 
 	ret = groupme_conversation_send_message(da, room_id, message);
 
+#if 0
+	/* TODO: Handle good */
 	if (ret > 0) {
 		printf("Got %s\n", da->self_username);
 		purple_serv_got_chat_in(pc, groupme_chat_hash(room_id), da->self_username, PURPLE_MESSAGE_SEND, message, time(NULL));
 	}
+#endif
 
 	return ret;
 }
