@@ -1775,7 +1775,7 @@ bail:
 static guint64
 groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean edited)
 {
-	guint64 msg_id = to_int(json_object_get_string_member(data, "id"));
+	const gchar *guid = json_object_get_string_member(data, "source_guid");
 	guint64 author_id = to_int(json_object_get_string_member(data, "sender_id"));
 
 	const gchar *content = json_object_get_string_member(data, "text");
@@ -1791,6 +1791,10 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 	PurpleMessageFlags flags;
 	gchar *tmp;
 	gint i;
+
+	/* Drop our own messages that were pinged back to us */
+	if ((author_id == da->self_user_id) && g_hash_table_remove(da->sent_message_ids, guid))
+		return;
 
 #if 0
 	if (author_id == da->self_user_id) {
@@ -1975,7 +1979,7 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 	g_free(escaped_content);
 #endif
 
-	return msg_id;
+	return 1;
 }
 
 struct groupme_group_typing_data {
@@ -4430,6 +4434,9 @@ groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gch
 
 	gchar *guid = groupme_make_guid();
 
+	/* Remember we sent it so we don't double display */
+	g_hash_table_replace(da->sent_message_ids, guid, TRUE);
+
 	json_object_set_string_member(msg, "text", message);
 	json_object_set_string_member(msg, "source_guid", guid);
 	json_object_set_object_member(data, "message", msg);
@@ -4440,7 +4447,6 @@ groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gch
 	groupme_fetch_url(da, url, postdata, NULL, NULL);
 
 	g_free(url);
-	g_free(guid);
 	g_free(postdata);
 	json_object_unref(data);
 
@@ -4470,13 +4476,10 @@ groupme_chat_send(PurpleConnection *pc, gint id,
 
 	ret = groupme_conversation_send_message(da, room_id, message);
 
-#if 0
-	/* TODO: Handle good */
 	if (ret > 0) {
-		printf("Got %s\n", da->self_username);
 		purple_serv_got_chat_in(pc, groupme_chat_hash(room_id), da->self_username, PURPLE_MESSAGE_SEND, message, time(NULL));
+
 	}
-#endif
 
 	return ret;
 }
