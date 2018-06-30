@@ -1,7 +1,7 @@
 /*
  *   GroupMe plugin for libpurple
+ *   Copyright (C) 2017-2018 Alyssa Rosenzweig
  *   Copyright (C) 2016  Eion Robb
- *   Copyright (C) 2017 Alyssa Rosenzweig
  *
  *   This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -43,11 +43,11 @@
 #include "json_compat.h"
 #include "purple_compat.h"
 
-#define GROUPME_PLUGIN_ID "prpl-eionrobb-groupme"
+#define GROUPME_PLUGIN_ID "prpl-alyssarosenzweig-groupme"
 #ifndef GROUPME_PLUGIN_VERSION
 #define GROUPME_PLUGIN_VERSION "0.1"
 #endif
-#define GROUPME_PLUGIN_WEBSITE "https://github.com/EionRobb/groupme-libpurple"
+#define GROUPME_PLUGIN_WEBSITE "https://notabug.com/alyssa/groupme-purple"
 
 #define GROUPME_USERAGENT "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36"
 
@@ -5130,7 +5130,7 @@ static PurplePluginInfo info = {
 	GROUPME_PLUGIN_VERSION,			/* version */
 	"",								/* summary */
 	"",								/* description */
-	"Eion Robb <eion@robbmob.com>", /* author */
+	"Alyssa Rosenzweig <alyssa@rosenzweig.io>", /* author */
 	GROUPME_PLUGIN_WEBSITE,			/* homepage */
 	libpurple2_plugin_load,			/* load */
 	libpurple2_plugin_unload,		/* unload */
