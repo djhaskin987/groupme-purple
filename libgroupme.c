@@ -409,6 +409,25 @@ groupme_free_channel(gpointer data)
 static void groupme_start_socket(GroupMeAccount *ya);
 
 static void
+groupme_got_subscription(GroupMeAccount *da, JsonNode *node, gpointer user_data)
+{
+	printf("Subscribed! TODO: Check\n");
+
+	/* We're good to go */
+	groupme_start_socket(da);
+}
+
+typedef void (*GroupMeProxyCallbackFunc)(GroupMeAccount *ya, JsonNode *node, gpointer user_data);
+
+typedef struct {
+	GroupMeAccount *ya;
+	GroupMeProxyCallbackFunc callback;
+	gpointer user_data;
+} GroupMeProxyConnection;
+
+static void groupme_fetch_url(GroupMeAccount *da, const gchar *url, const gchar *postdata, GroupMeProxyCallbackFunc callback, gpointer user_data);
+
+static void
 groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
 	if (node != NULL) {
@@ -421,8 +440,15 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 			da->client_id = g_strdup(clientId);
 			printf("Client ID: %s\n", clientId);
 
-			/* Client ID needed for websocketing */
-			groupme_start_socket(da);
+			/* Subscribe now */
+			const gchar *str = g_strdup_printf(
+					"{\"channel\": \"/meta/subscribe\", \"clientId\": \"%s\", \"subscription\": \"/user/%d\", \"ext\": {\"timestamp\": %d, \"access_token\": \"%s\"}, \"id\": 2}",
+					clientId,
+					da->self_user_id,
+					time(NULL),
+					da->token);
+
+			groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, str, groupme_got_subscription, NULL);
 		}
 	}
 }
@@ -902,14 +928,6 @@ groupme_get_user_flags(GroupMeAccount *da, GroupMeGuild *guild, GroupMeUser *use
 	return best_flag;
 }
 
-typedef void (*GroupMeProxyCallbackFunc)(GroupMeAccount *ya, JsonNode *node, gpointer user_data);
-
-typedef struct {
-	GroupMeAccount *ya;
-	GroupMeProxyCallbackFunc callback;
-	gpointer user_data;
-} GroupMeProxyConnection;
-
 static gchar *
 groupme_combine_username(const gchar *username, const gchar *discriminator)
 {
@@ -1218,7 +1236,7 @@ groupme_send_auth(GroupMeAccount *da)
 	json_object_set_string_member(data, "channel", "/meta/connect");
 	json_object_set_string_member(data, "clientId", da->client_id);
 	json_object_set_string_member(data, "connectionType", "websocket");
-	json_object_set_string_member(data, "id", "2");
+	json_object_set_string_member(data, "id", "3");
 
 	groupme_socket_write_json(da, data);
 
@@ -2871,6 +2889,23 @@ groupme_got_read_states(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	}
 }
 
+static void
+groupme_got_self(GroupMeAccount *da, JsonNode *node, gpointer user_data)
+{
+	JsonObject *container = json_node_get_object(node);
+	JsonObject *resp = json_object_get_object_member(container, "response");
+	da->self_user_id = to_int(json_object_get_string_member(resp, "id"));
+
+	/* Now that we have the user ID, we can start the websocket handshake */
+	printf("User ID %X\n", da->self_user_id);
+	{
+		printf("Fetching handshake\n");
+		const gchar *str = "{\"channel\": \"/meta/handshake\", \"version\": \"1.0\", \"supportedConnectionTypes\": [\"websocket\"], \"id\": 1}";
+		groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, str, groupme_got_handshake, NULL);
+	}
+
+}
+
 static void groupme_login_response(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 
 static void
@@ -3018,14 +3053,9 @@ groupme_login(PurpleAccount *account)
 	da->token = dev_token;
 
 	/* Test the REST API */
+	groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
 	groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/groups?", NULL, groupme_got_guilds, NULL);
 
-	{
-		printf("Fetching handshake\n");
-		const gchar *str = "{\"channel\": \"/meta/handshake\", \"version\": \"1.0\", \"supportedConnectionTypes\": [\"websocket\"], \"id\": 1}";
-		groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, str, groupme_got_handshake, NULL);
-	}
-	
 	/* XXX: Authenticate good */
 	purple_connection_set_state(da->pc, PURPLE_CONNECTION_CONNECTED);
 	
