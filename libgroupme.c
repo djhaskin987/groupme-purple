@@ -54,7 +54,7 @@
 #define GROUPME_BUFFER_DEFAULT_SIZE 40960
 
 #define GROUPME_API_SERVER "api.groupme.com/v3"
-#define GROUPME_PUSH_SERVER "push.groupme.com/faye"
+#define GROUPME_PUSH_SERVER "push.groupme.com/faye?"
 #define GROUPME_GATEWAY_SERVER "push.groupme.com"
 #define GROUPME_GATEWAY_PORT 443
 #define GROUPME_GATEWAY_SERVER_PATH "/faye"
@@ -1229,6 +1229,12 @@ static GHashTable *groupme_chat_info_defaults(PurpleConnection *pc, const char *
 static void groupme_mark_room_messages_read(GroupMeAccount *ya, guint64 room_id);
 
 static void
+groupme_got_connect(GroupMeAccount *da, JsonNode *node, gpointer user_data)
+{
+	printf("/**/\n");
+}
+
+static void
 groupme_send_auth(GroupMeAccount *da)
 {
 	JsonObject *data = json_object_new();
@@ -1238,7 +1244,8 @@ groupme_send_auth(GroupMeAccount *da)
 	json_object_set_string_member(data, "connectionType", "websocket");
 	json_object_set_string_member(data, "id", "3");
 
-	groupme_socket_write_json(da, data);
+	groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, json_object_to_string(data), groupme_got_connect, NULL);
+	//groupme_socket_write_json(da, data);
 
 	json_object_unref(data);
 }
@@ -3315,6 +3322,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
 	guchar length_code;
 	int read_len = 0;
 	gboolean done_some_reads = FALSE;
+	printf("ws got data\n");
 
 	if (G_UNLIKELY(!ya->websocket_header_received)) {
 		gint nlbr_count = 0;
