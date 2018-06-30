@@ -135,6 +135,7 @@ typedef struct {
 	const gchar *afk_voice_channel;
 
 	GHashTable *emojis;
+	GroupMeChannel *channel;
 } GroupMeGuild;
 
 typedef struct {
@@ -500,6 +501,7 @@ groupme_add_channel(GroupMeGuild *guild, JsonObject *json, guint64 guild_id)
 	GroupMeChannel *channel = groupme_new_channel(json);
 	channel->guild_id = guild_id;
 	g_hash_table_replace_int64(guild->channels, channel->id, channel);
+	guild->channel = channel;
 	return channel;
 }
 
@@ -1243,10 +1245,41 @@ static void groupme_mark_room_messages_read(GroupMeAccount *ya, guint64 room_id)
 
 static void groupme_init_push(GroupMeAccount *da);
 
+static guint64
+groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean edited);
+
 static void
 groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
-	printf("/**/\n");
+	JsonArray *subscriptions = json_node_get_array(node);
+
+	guint len = json_array_get_length(subscriptions);
+
+	for (int i = len - 1; i >= 0; i--) {
+		JsonObject *sub = json_array_get_object_element(subscriptions, i);
+
+		/* Actuate the new response */
+		if (!json_object_has_member(sub, "data"))
+			continue;
+
+		JsonObject *data = json_object_get_object_member(sub, "data");
+
+		if (!json_object_has_member(data, "subject"))
+			continue;
+
+		JsonObject *subj = json_object_get_object_member(data, "subject");
+
+		const gchar *type = json_object_get_string_member(subj, "type");
+
+		if (g_strcmp0(type, "line.create")) {
+			/* Incoming message */
+
+			int gid = to_int(json_object_get_string_member(subj, "group_id"));
+			groupme_process_message(da, gid, subj, FALSE);
+		} else {
+			printf("Unknown type %s, check debug logs\n", type);
+		}
+	}
 
 #ifdef USE_LONG_POLL
 	/* Long polling consists of repeated reqeusts to the push server */
@@ -1740,7 +1773,7 @@ bail:
 }
 
 static guint64
-groupme_process_message(GroupMeAccount *da, GroupMeChannel *channel, JsonObject *data, gboolean edited)
+groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean edited)
 {
 	guint64 msg_id = to_int(json_object_get_string_member(data, "id"));
 	guint64 author_id = to_int(json_object_get_string_member(data, "sender_id"));
@@ -1906,7 +1939,7 @@ groupme_process_message(GroupMeAccount *da, GroupMeChannel *channel, JsonObject 
 			groupme_open_chat(da, channel_id, NULL, mentioned);
 		}
 #endif
-		groupme_open_chat(da, channel->id, NULL, FALSE);
+		groupme_open_chat(da, channel, NULL, FALSE);
 
 #if 0
 		gchar *name = NULL;
@@ -1921,8 +1954,7 @@ groupme_process_message(GroupMeAccount *da, GroupMeChannel *channel, JsonObject 
 		printf("<%s> %s\n", name, content);
 
 		if (content && *content) {
-			printf("Channel %d\n", channel->id);
-			purple_serv_got_chat_in(da->pc, groupme_chat_hash(channel->id), name, flags, content, timestamp);
+			purple_serv_got_chat_in(da->pc, groupme_chat_hash(channel), name, flags, content, timestamp);
 		}
 
 		if (attachments) {
@@ -1931,7 +1963,7 @@ groupme_process_message(GroupMeAccount *da, GroupMeChannel *channel, JsonObject 
 
 				if (json_object_has_member(attachment, "url")) {
 					const gchar *url = json_object_get_string_member(attachment, "url");
-					purple_serv_got_chat_in(da->pc, groupme_chat_hash(channel->id), name, flags, url, timestamp);
+					purple_serv_got_chat_in(da->pc, groupme_chat_hash(channel), name, flags, url, timestamp);
 				}
 			}
 		}
