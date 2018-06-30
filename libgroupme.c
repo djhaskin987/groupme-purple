@@ -404,6 +404,21 @@ groupme_free_channel(gpointer data)
 	g_free(channel);
 }
 
+static void
+groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
+{
+	if (node != NULL) {
+		JsonArray *responseA = json_node_get_array(node);
+		JsonObject *response = json_array_get_object_element(responseA, 0);
+		
+		if (json_object_has_member(response, "successful")) {
+			printf("Handshake success\n");
+			const gchar *clientId = json_object_get_string_member(response, "clientId");
+			printf("Client ID: %s\n", clientId);
+		}
+	}
+}
+
 /* updating */
 
 static void
@@ -1082,7 +1097,12 @@ groupme_fetch_url_with_method(GroupMeAccount *ya, const gchar *method, const gch
 	}
 
 	/* Attach token to requests */
-	gchar *url = ya->token ? g_strdup_printf("%s&token=%s", _url, ya->token) : g_strdup(_url);
+	gchar *url = g_strdup(_url);
+	
+	if (ya->token && (g_strcmp0(method, "GET") == 0)) {
+		g_free(url);
+		url = g_strdup_printf("%s&token=%s", _url, ya->token);
+	}
 
 	purple_debug_info("groupme", "Fetching url %s\n", url);
 
@@ -3025,7 +3045,11 @@ groupme_login(PurpleAccount *account)
 	/* Test the REST API */
 	groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/groups?", NULL, groupme_got_guilds, NULL);
 
-	//groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER "/meta/handshake?", NULL, groupme_got_push_handshake, NULL);
+	{
+		printf("Fetching handshake\n");
+		const gchar *str = "{\"channel\": \"/meta/handshake\", \"version\": \"1.0\", \"supportedConnectionTypes\": [\"websocket\"], \"id\": 1}";
+		groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, str, groupme_got_handshake, NULL);
+	}
 	
 	/* XXX: Authenticate good */
 	purple_connection_set_state(da->pc, PURPLE_CONNECTION_CONNECTED);
