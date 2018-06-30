@@ -1125,7 +1125,7 @@ groupme_fetch_url_with_method(GroupMeAccount *ya, const gchar *method, const gch
 	/* Attach token to requests */
 	gchar *url = g_strdup(_url);
 	
-	if (ya->token && (g_strcmp0(method, "GET") == 0)) {
+	if (ya->token) {
 		g_free(url);
 		url = g_strdup_printf("%s&token=%s", _url, ya->token);
 	}
@@ -2894,10 +2894,12 @@ groupme_got_self(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
 	JsonObject *container = json_node_get_object(node);
 	JsonObject *resp = json_object_get_object_member(container, "response");
+
 	da->self_user_id = to_int(json_object_get_string_member(resp, "id"));
+	da->self_username = g_strdup(json_object_get_string_member(resp, "name"));
 
 	/* Now that we have the user ID, we can start the websocket handshake */
-	printf("User ID %X\n", da->self_user_id);
+	printf("User ID %X (%s)\n", da->self_user_id, da->self_username);
 	{
 		printf("Fetching handshake\n");
 		const gchar *str = "{\"channel\": \"/meta/handshake\", \"version\": \"1.0\", \"supportedConnectionTypes\": [\"websocket\"], \"id\": 1}";
@@ -4338,44 +4340,38 @@ groupme_escape_md(const gchar *markdown)
 	return g_string_free(s, FALSE);
 }
 
+static gchar *
+groupme_make_guid()
+{
+	gchar *uuid = g_uuid_string_random();
+	gchar *prepped = g_strdup_printf("groupme-min-%s", uuid);
+	g_free(uuid);
+
+	return prepped;
+}
+
 static gint
 groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gchar *message)
 {
 	JsonObject *data = json_object_new();
+	JsonObject *msg = json_object_new();
 	gchar *url;
 	gchar *postdata;
-	gchar *nonce;
-	gchar *marked;
-	gchar *stripped;
-	gchar * final;
 
-	nonce = g_strdup_printf("%" G_GUINT32_FORMAT, g_random_int());
-	g_hash_table_insert(da->sent_message_ids, nonce, nonce);
+	gchar *guid = groupme_make_guid();
 
-	marked = groupme_html_to_markdown(groupme_escape_md(message));
-	stripped = g_strstrip(purple_markup_strip_html(marked));
+	json_object_set_string_member(msg, "text", message);
+	json_object_set_string_member(msg, "source_guid", guid);
+	json_object_set_object_member(data, "message", msg);
 
-	/* translate GroupMe-formatted actions into *markdown* syntax */
-	if (purple_message_meify(stripped, -1)) {
-		final = g_strdup_printf("_%s_", stripped);
-	} else {
-		final = g_strdup(stripped);
-	}
-
-	json_object_set_string_member(data, "content", final);
-	json_object_set_string_member(data, "nonce", nonce);
-	json_object_set_boolean_member(data, "tts", FALSE);
-
-	url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages", room_id);
+	url = g_strdup_printf("https://" GROUPME_API_SERVER "/groups/%" G_GUINT64_FORMAT "/messages?", room_id);
 	postdata = json_object_to_string(data);
 
 	groupme_fetch_url(da, url, postdata, NULL, NULL);
 
-	g_free(marked);
-	g_free(stripped);
 	g_free(url);
+	g_free(guid);
 	g_free(postdata);
-	g_free(final);
 	json_object_unref(data);
 
 	return 1;
@@ -4402,43 +4398,13 @@ groupme_chat_send(PurpleConnection *pc, gint id,
 	g_return_val_if_fail(room_id_ptr, -1);
 	guint64 room_id = *room_id_ptr;
 
-	gchar *d_message = g_strdup(message);
-
-	GroupMeGuild *guild = NULL;
-	groupme_get_channel_global_int_guild(da, room_id, &guild);
-	
-	d_message = groupme_make_mentions(da, guild, d_message);
-
-	if(guild) {
-		g_return_val_if_fail(guild, -1);
-
-		gchar *tmp = g_regex_replace_eval(emoji_natural_regex, d_message, -1, 0, 0, groupme_replace_natural_emoji, guild, NULL);
-
-		if (tmp != NULL) {
-			g_free(d_message);
-			d_message = tmp;
-		}
-	}
-
-	g_return_val_if_fail(groupme_get_channel_global_int(da, room_id), -1); /* TODO rejoin room? */
-	ret = groupme_conversation_send_message(da, room_id, d_message);
+	ret = groupme_conversation_send_message(da, room_id, message);
 
 	if (ret > 0) {
-		gchar *tmp = g_regex_replace_eval(emoji_regex, d_message, -1, 0, 0, groupme_replace_emoji, da, NULL);
-
-		if (tmp != NULL) {
-			g_free(d_message);
-			d_message = tmp;
-		}
-
-		d_message = groupme_replace_mentions_bare(da, guild, d_message);
-
-		gchar *name = groupme_create_nickname_from_id(da, guild, da->self_user_id);
-		purple_serv_got_chat_in(pc, groupme_chat_hash(room_id), name, PURPLE_MESSAGE_SEND, d_message, time(NULL));
-		g_free(name);
+		printf("Got %s\n", da->self_username);
+		purple_serv_got_chat_in(pc, groupme_chat_hash(room_id), da->self_username, PURPLE_MESSAGE_SEND, message, time(NULL));
 	}
 
-	g_free(d_message);
 	return ret;
 }
 
