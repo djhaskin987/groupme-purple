@@ -59,6 +59,15 @@
 #define GROUPME_GATEWAY_PORT 443
 #define GROUPME_GATEWAY_SERVER_PATH "/faye"
 
+/* TODO: Websockets */
+#define USE_LONG_POLL
+
+#ifdef USE_LONG_POLL
+#define GROUPME_PUSH_TYPE "long-polling"
+#else
+#define GROUPME_PUSH_TYPE "websocket"
+#endif
+
 #define IGNORE_PRINTS
 
 static GRegex *channel_mentions_regex = NULL;
@@ -190,6 +199,8 @@ typedef struct {
 	gint roomlist_guild_count;
 
 	gchar *client_id;
+
+	int push_id;
 } GroupMeAccount;
 
 typedef struct {
@@ -447,6 +458,8 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 					da->self_user_id,
 					time(NULL),
 					da->token);
+
+			da->push_id = 3;
 
 			groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, str, groupme_got_subscription, NULL);
 		}
@@ -1228,26 +1241,36 @@ static void groupme_socket_write_json(GroupMeAccount *ya, JsonObject *data);
 static GHashTable *groupme_chat_info_defaults(PurpleConnection *pc, const char *chatname);
 static void groupme_mark_room_messages_read(GroupMeAccount *ya, guint64 room_id);
 
+static void groupme_init_push(GroupMeAccount *da);
+
 static void
-groupme_got_connect(GroupMeAccount *da, JsonNode *node, gpointer user_data)
+groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
 	printf("/**/\n");
+
+#ifdef USE_LONG_POLL
+	/* Long polling consists of repeated reqeusts to the push server */
+	groupme_init_push(da);	
+#endif
 }
 
 static void
-groupme_send_auth(GroupMeAccount *da)
+groupme_init_push(GroupMeAccount *da)
 {
 	JsonObject *data = json_object_new();
 
 	json_object_set_string_member(data, "channel", "/meta/connect");
 	json_object_set_string_member(data, "clientId", da->client_id);
-	json_object_set_string_member(data, "connectionType", "websocket");
-	json_object_set_string_member(data, "id", "3");
+	json_object_set_string_member(data, "connectionType", GROUPME_PUSH_TYPE);
 
-	groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, json_object_to_string(data), groupme_got_connect, NULL);
+	gchar *id = from_int(da->push_id++);
+	json_object_set_string_member(data, "id", id);
+
+	groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, json_object_to_string(data), groupme_got_push, NULL);
 	//groupme_socket_write_json(da, data);
 
 	json_object_unref(data);
+	g_free(id);
 }
 
 static gboolean
@@ -2909,7 +2932,7 @@ groupme_got_self(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	printf("User ID %X (%s)\n", da->self_user_id, da->self_username);
 	{
 		printf("Fetching handshake\n");
-		const gchar *str = "{\"channel\": \"/meta/handshake\", \"version\": \"1.0\", \"supportedConnectionTypes\": [\"websocket\"], \"id\": 1}";
+		const gchar *str = "{\"channel\": \"/meta/handshake\", \"version\": \"1.0\", \"supportedConnectionTypes\": [\"" GROUPME_PUSH_TYPE "\"], \"id\": 1}";
 		groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, str, groupme_got_handshake, NULL);
 	}
 
@@ -3185,14 +3208,14 @@ groupme_process_frame(GroupMeAccount *da, const gchar *frame)
 			g_free(da->session_id);
 			da->session_id = NULL;
 
-			groupme_send_auth(da);
+			groupme_init_push(da);
 			break;
 		}
 
 		case 10: { /* Hello */
 			JsonObject *data = json_object_get_object_member(obj, "d");
 			gint64 heartbeat_interval = json_object_get_int_member(data, "heartbeat_interval");
-			groupme_send_auth(da);
+			groupme_init_push(da);
 
 			if (da->heartbeat_timeout) {
 				g_source_remove(da->heartbeat_timeout);
@@ -3503,7 +3526,7 @@ groupme_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInp
 	g_free(websocket_header);
 
 	printf("Websocket headered\n");
-	groupme_send_auth(da);
+	groupme_init_push(da);
 }
 
 static void
@@ -3524,6 +3547,12 @@ groupme_socket_failed(PurpleSslConnection *conn, PurpleSslErrorType errortype, g
 static void
 groupme_start_socket(GroupMeAccount *da)
 {
+#ifdef USE_LONG_POLL
+	printf("(Not starting websocket bc long poll");
+	groupme_init_push(da);
+	return;
+#endif
+
 	if (da->heartbeat_timeout) {
 		g_source_remove(da->heartbeat_timeout);
 	}
