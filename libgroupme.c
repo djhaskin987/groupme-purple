@@ -1726,8 +1726,8 @@ groupme_process_message(GroupMeAccount *da, GroupMeChannel *channel, JsonObject 
 	const gchar *timestamp_str = json_object_get_string_member(data, "created_at");
 	time_t timestamp = purple_str_to_time(timestamp_str, FALSE, NULL, NULL, NULL);
 
-#if 0
 	JsonArray *attachments = json_object_get_array_member(data, "attachments");
+#if 0
 	JsonArray *mentions = json_object_get_array_member(data, "mentions");
 	JsonArray *mention_roles = json_object_get_array_member(data, "mention_roles");
 #endif
@@ -1902,16 +1902,16 @@ groupme_process_message(GroupMeAccount *da, GroupMeChannel *channel, JsonObject 
 			purple_serv_got_chat_in(da->pc, groupme_chat_hash(channel->id), name, flags, content, timestamp);
 		}
 
-#if 0
 		if (attachments) {
 			for (i = json_array_get_length(attachments) - 1; i >= 0; i--) {
 				JsonObject *attachment = json_array_get_object_element(attachments, i);
-				const gchar *url = json_object_get_string_member(attachment, "url");
 
-				purple_serv_got_chat_in(da->pc, groupme_chat_hash(channel_id), name, flags, url, timestamp);
+				if (json_object_has_member(attachment, "url")) {
+					const gchar *url = json_object_get_string_member(attachment, "url");
+					purple_serv_got_chat_in(da->pc, groupme_chat_hash(channel->id), name, flags, url, timestamp);
+				}
 			}
 		}
-#endif
 
 		//g_free(name);
 #if 0
@@ -3148,6 +3148,7 @@ groupme_process_frame(GroupMeAccount *da, const gchar *frame)
 	JsonParser *parser = json_parser_new();
 	JsonNode *root;
 	gint64 opcode;
+	printf("process frame!\n");
 
 	purple_debug_info("groupme", "got frame data: %s\n", frame);
 
