@@ -55,9 +55,9 @@
 
 #define GROUPME_API_SERVER "api.groupme.com/v3"
 #define GROUPME_PUSH_SERVER "push.groupme.com/faye"
-#define GROUPME_GATEWAY_SERVER "gateway.groupme.gg"
+#define GROUPME_GATEWAY_SERVER "push.groupme.com"
 #define GROUPME_GATEWAY_PORT 443
-#define GROUPME_GATEWAY_SERVER_PATH "/?encoding=json&v=6"
+#define GROUPME_GATEWAY_SERVER_PATH "/faye"
 
 #define IGNORE_PRINTS
 
@@ -404,6 +404,8 @@ groupme_free_channel(gpointer data)
 	g_free(channel);
 }
 
+static void groupme_start_socket(GroupMeAccount *ya);
+
 static void
 groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
@@ -415,6 +417,9 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 			printf("Handshake success\n");
 			const gchar *clientId = json_object_get_string_member(response, "clientId");
 			printf("Client ID: %s\n", clientId);
+
+			/* Client ID needed for websocketing */
+			groupme_start_socket(da);
 		}
 	}
 }
@@ -2605,8 +2610,6 @@ groupme_set_idle(PurpleConnection *pc, int idle_time)
 
 	groupme_socket_write_json(ya, obj);
 }
-
-static void groupme_start_socket(GroupMeAccount *ya);
 
 static void
 groupme_restart_channel(GroupMeAccount *da)
