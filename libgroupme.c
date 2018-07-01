@@ -1638,98 +1638,6 @@ groupme_make_mentions(GroupMeAccount *da, GroupMeGuild *guild, gchar *message)
 	return message;
 }
 
-#define HTML_TOGGLE_OUT(f, a, b)           \
-	out = g_string_append(out, f ? b : a); \
-	f = !f;
-
-/* workaround errata in GroupMe's (users') markdown implementation */
-
-static gboolean
-groupme_underscore_match(const gchar *html, int i)
-{
-	while (html[i] != ' ' && html[i]) {
-		if (html[i++] == '_') {
-			return !html[i] || html[i] == ' ';
-		}
-	}
-
-	return FALSE;
-}
-
-static gchar *
-groupme_convert_markdown(const gchar *html)
-{
-	g_return_val_if_fail(html != NULL, NULL);
-	
-	guint html_len = strlen(html);
-	GString *out = g_string_sized_new(html_len * 2);
-
-	gboolean s_bold = FALSE;
-	gboolean s_italics = FALSE;
-	gboolean s_underline = FALSE;
-	gboolean s_strikethrough = FALSE;
-	gboolean s_codeblock = FALSE;
-	gboolean s_codebit = FALSE;
-
-	for (guint i = 0; i < html_len; ++i) {
-		char c = html[i];
-
-		if ((s_codeblock || s_codebit) && c != '`') {
-			out = g_string_append_c(out, html[i]);
-			continue;
-		}
-
-		if (c == '\\') {
-			out = g_string_append_c(out, html[++i]);
-		} else if (c == '*') {
-			if (html[i + 1] == '*') {
-				HTML_TOGGLE_OUT(s_bold, "<b>", "</b>");
-				i += 1;
-			} else {
-				if ((s_italics && html[i - 1] != ' ') || (!s_italics && html[i + 1] != ' ')) {
-					HTML_TOGGLE_OUT(s_italics, "<i>", "</i>");
-				} else {
-					out = g_string_append_c(out, html[i]);
-				}
-			}
-		} else if (c == '~' && html[i + 1] == '~') {
-			HTML_TOGGLE_OUT(s_strikethrough, "<s>", "</s>");
-			++i;
-		} else if (c == '_') {
-			if (html[i + 1] == '_') {
-				HTML_TOGGLE_OUT(s_underline, "<u>", "</u>");
-			} else {
-				if (s_italics || groupme_underscore_match(html, i + 1)) {
-					HTML_TOGGLE_OUT(s_italics, "<i>", "</i>");
-				} else {
-					out = g_string_append_c(out, html[i]);
-				}
-			}
-		} else if (c == '`') {
-			if (html[i + 1] == '`' && html[i + 2] == '`') {
-				if (!s_codeblock) {
-					while (html[i] != '\n' && html[i] != ' ' && html[i]) {
-						++i;
-					}
-
-					out = g_string_append(out, "<br/><span style='font-family: monospace; white-space: pre'>");
-				} else {
-					out = g_string_append(out, "</span>");
-					i += 2;
-				}
-
-				s_codeblock = !s_codeblock;
-			} else {
-				HTML_TOGGLE_OUT(s_codebit, "<span style='font-family: monospace; white-space: pre'>", "</span>");
-			}
-		} else {
-			out = g_string_append_c(out, c);
-		}
-	}
-
-	return g_string_free(out, FALSE);
-}
-
 static gchar *
 groupme_create_nickname(GroupMeUser *author, GroupMeGuild *guild)
 {
@@ -3068,9 +2976,9 @@ groupme_login(PurpleAccount *account)
 #endif
 
 	pc_flags = purple_connection_get_flags(pc);
-	pc_flags |= PURPLE_CONNECTION_FLAG_HTML;
 	pc_flags |= PURPLE_CONNECTION_FLAG_NO_FONTSIZE;
 	pc_flags |= PURPLE_CONNECTION_FLAG_NO_BGCOLOR;
+	pc_flags |= PURPLE_CONNECTION_FLAG_NO_IMAGES;
 	purple_connection_set_flags(pc, pc_flags);
 
 	da = g_new0(GroupMeAccount, 1);
@@ -4314,122 +4222,6 @@ groupme_send_typing(PurpleConnection *pc, const gchar *who, PurpleIMTypingState 
 	return groupme_conv_send_typing(conv, state, NULL);
 }
 
-static gboolean
-groupme_replace_natural_emoji(const GMatchInfo *match, GString *result, gpointer user_data)
-{
-	GroupMeGuild *guild = user_data;
-	gchar *emoji = g_match_info_fetch(match, 1);
-
-	gchar *emoji_id = g_hash_table_lookup(guild->emojis, emoji);
-
-	if (emoji_id) {
-		g_string_append_printf(result, "&lt;:%s:%s&gt;", emoji, emoji_id);
-	} else {
-		g_string_append_printf(result, ":%s:", emoji);
-	}
-
-	g_free(emoji);
-
-	return FALSE;
-}
-
-static gchar *
-groupme_helper_replace(gchar *a, gchar *b, gchar *c)
-{
-	gchar *temp = purple_strreplace(a, b, c);
-	g_free(a);
-	return temp;
-}
-
-static gchar *
-groupme_html_to_markdown(gchar *html)
-{
-	html = groupme_helper_replace(html, "<b>", "**");
-	html = groupme_helper_replace(html, "</b>", "**");
-	html = groupme_helper_replace(html, "<i>", "*");
-	html = groupme_helper_replace(html, "</i>", "*");
-	html = groupme_helper_replace(html, "<u>", "__");
-	html = groupme_helper_replace(html, "</u>", "__");
-	html = groupme_helper_replace(html, "<s>", "~~");
-	html = groupme_helper_replace(html, "</s>", "~~");
-
-	return html;
-}
-
-static gchar *
-groupme_escape_md(const gchar *markdown)
-{
-	size_t markdown_len = strlen(markdown);
-	/* Worst case allocation */
-	GString *s = g_string_sized_new(markdown_len * 2);
-
-	gboolean verbatim = FALSE;
-	gboolean code_block = FALSE;
-	gboolean link = FALSE;
-
-	for (guint i = 0; i < markdown_len; ++i) {
-		char c = markdown[i];
-
-		if (c == '`') {
-			if (code_block) {
-				code_block = verbatim = FALSE;
-			} else if (!verbatim) {
-				code_block = verbatim = TRUE;
-			}
-
-			g_string_append_c(s, markdown[i]);
-
-			if (markdown[i + 1] == '`' && markdown[i + 2] == '`') {
-				i += 2;
-				g_string_append_c(s, markdown[i]);
-				g_string_append_c(s, markdown[i]);
-				continue;
-			}
-		}
-
-		if (!verbatim) {
-			if (strncmp(markdown + i, "http://", sizeof("http://") - 1) == 0 ||
-				strncmp(markdown + i, "https://", sizeof("https://") - 1) == 0)
-
-			{
-				link = verbatim = TRUE;
-			}
-		}
-
-		if (link && c == ' ') {
-			link = verbatim = FALSE;
-		}
-
-		if (!verbatim) {
-			if (
-			  (c == '_' && (markdown[i + 1] == ' ' ||
-							markdown[i + 1] == '\0' ||
-							i == 0 ||
-							markdown[i - 1] == ' ' ||
-							markdown[i - 1] == '\0')) ||
-			  (c == '*') ||
-			  (c == '\\' && markdown[i + 1] != '_') ||
-			  (c == '~' && (markdown[i + 1] == '~'))) {
-				g_string_append_c(s, '\\');
-			}
-		}
-
-		g_string_append_c(s, c);
-	}
-
-	return g_string_free(s, FALSE);
-}
-
-static gchar *
-groupme_make_guid()
-{
-	gchar *uuid = g_uuid_string_random();
-	gchar *prepped = g_strdup_printf("groupme-min-%s", uuid);
-	g_free(uuid);
-
-	return prepped;
-}
-
 static gint
 groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gchar *message, gboolean is_dm)
 {
@@ -4437,14 +4229,18 @@ groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gch
 	JsonObject *msg = json_object_new();
 	gchar *url;
 	gchar *postdata;
+	gchar *stripped = purple_markup_strip_html(message);
 
 	gchar *rid = from_int(room_id);
-	gchar *guid = groupme_make_guid();
+
+        gchar *uuid = g_uuid_string_random();
+        gchar *guid = g_strdup_printf("groupme-min-%s", uuid);
+        g_free(uuid);
 
 	/* Remember we sent it so we don't double display */
 	g_hash_table_replace(da->sent_message_ids, guid, TRUE);
 
-	json_object_set_string_member(msg, "text", message);
+	json_object_set_string_member(msg, "text", stripped);
 	json_object_set_string_member(msg, "source_guid", guid);
 	json_object_set_object_member(data, is_dm ? "direct_message" : "message", msg);
 
@@ -4464,6 +4260,7 @@ groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gch
 
 	groupme_fetch_url(da, url, postdata, NULL, NULL);
 
+	g_free(stripped);
 	g_free(url);
 	g_free(postdata);
 	g_free(rid);
