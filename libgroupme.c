@@ -77,35 +77,12 @@ typedef enum {
 	USER_DND
 } GroupMeStatus;
 
-typedef enum {
-	CHANNEL_GUILD_TEXT = 0,
-	CHANNEL_DM = 1,
-	CHANNEL_VOICE = 2,
-	CHANNEL_GROUP_DM = 3,
-	CHANNEL_GUILD_CATEGORY = 4
-} GroupMeChannelType;
-
-typedef struct {
-	guint64 id;
-	gchar *name;
-	int color;
-} GroupMeGuildRole;
-
-typedef struct {
-	guint64 id;
-	gint64 deny;
-	gint64 allow;
-} GroupMePermissionOverride;
-
 typedef struct {
 	guint64 id;
 	guint64 guild_id;
 	gchar *name;
 	gchar *topic;
-	GroupMeChannelType type;
-	int position;
 	guint64 last_message_id;
-	GList *recipients; /* For group DMs */
 } GroupMeChannel;
 
 typedef struct {
@@ -118,18 +95,12 @@ typedef struct {
 	GHashTable *nicknames;	 /* id->nick? */
 	GHashTable *nicknames_rev; /* reverse */
 
-	GHashTable *channels;
-	int afk_timeout;
-	const gchar *afk_voice_channel;
-
-	GHashTable *emojis;
 	GroupMeChannel *channel;
 } GroupMeGuild;
 
 typedef struct {
 	guint64 id;
 	gchar *nick;
-	gchar *joined_at;
 	gboolean is_op;
 } GroupMeGuildMembership;
 
@@ -232,6 +203,7 @@ groupme_new_user(JsonObject *json)
 
 	user->id = to_int(json_object_get_string_member(json, "user_id"));
 	user->name = g_strdup(json_object_get_string_member(json, "nickname"));
+	user->avatar = g_strdup(json_object_get_string_member(json, "image_url"));
 
 	user->guild_memberships = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild_membership);
 
@@ -245,8 +217,11 @@ groupme_new_guild(JsonObject *json)
 
 	guild->id = to_int(json_object_get_string_member(json, "id"));
 	guild->name = g_strdup(json_object_get_string_member(json, "name"));
+	guild->icon = g_strdup(json_object_get_string_member(json, "image_url"));
 	guild->members = g_array_new(TRUE, TRUE, sizeof(guint64));
 
+	guild->nicknames = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, g_free);
+	guild->nicknames_rev = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	return guild;
 }
 
@@ -258,11 +233,7 @@ groupme_new_channel(JsonObject *json)
 	channel->id = to_int(json_object_get_string_member(json, "id"));
 	channel->name = g_strdup(json_object_get_string_member(json, "name"));
 	channel->topic = g_strdup(json_object_get_string_member(json, "topic"));
-	channel->position = json_object_get_int_member(json, "position");
-	channel->type = json_object_get_int_member(json, "type");
 	channel->last_message_id = to_int(json_object_get_string_member(json, "last_message_id"));
-
-	channel->recipients = NULL;
 
 	return channel;
 }
@@ -301,7 +272,6 @@ groupme_free_guild_membership(gpointer data)
 {
 	GroupMeGuildMembership *guild_membership = data;
 	g_free(guild_membership->nick);
-	g_free(guild_membership->joined_at);
 
 	g_free(guild_membership);
 }
@@ -311,7 +281,6 @@ groupme_free_user(gpointer data)
 {
 	GroupMeUser *user = data;
 	g_free(user->name);
-	g_free(user->game);
 	g_free(user->avatar);
 
 	g_hash_table_unref(user->guild_memberships);
@@ -328,8 +297,6 @@ groupme_free_guild(gpointer data)
 	g_array_unref(guild->members);
 	g_hash_table_unref(guild->nicknames);
 	g_hash_table_unref(guild->nicknames_rev);
-	g_hash_table_unref(guild->channels);
-	g_hash_table_unref(guild->emojis);
 	g_free(guild);
 }
 
@@ -339,8 +306,6 @@ groupme_free_channel(gpointer data)
 	GroupMeChannel *channel = data;
 	g_free(channel->name);
 	g_free(channel->topic);
-
-	g_list_free_full(channel->recipients, g_free);
 
 	g_free(channel);
 }
@@ -427,7 +392,6 @@ groupme_add_channel(GroupMeGuild *guild, JsonObject *json, guint64 guild_id)
 {
 	GroupMeChannel *channel = groupme_new_channel(json);
 	channel->guild_id = guild_id;
-	g_hash_table_replace_int64(guild->channels, channel->id, channel);
 	guild->channel = channel;
 	return channel;
 }
@@ -580,71 +544,6 @@ groupme_upsert_guild(GHashTable *guild_table, JsonObject *json)
 		g_hash_table_replace_int64(guild_table, guild->id, guild);
 		return guild;
 	}
-}
-
-static GroupMeChannel *
-groupme_get_channel_global_int_guild(GroupMeAccount *da, guint64 id, GroupMeGuild **o_guild)
-{
-	GHashTableIter iter;
-	gpointer key, value;
-
-	g_hash_table_iter_init(&iter, da->new_guilds);
-
-	while (g_hash_table_iter_next(&iter, &key, &value)) {
-		GroupMeGuild *guild = value;
-
-		if (!guild) {
-			continue;
-		}
-
-		GroupMeChannel *channel = g_hash_table_lookup_int64(guild->channels, id);
-
-		if (channel) {
-			if (o_guild) {
-				*o_guild = guild;
-			}
-
-			return channel;
-		}
-	}
-
-	return NULL;
-}
-
-static GroupMeChannel *
-groupme_get_channel_global_int(GroupMeAccount *da, guint64 id)
-{
-	return groupme_get_channel_global_int_guild(da, id, NULL);
-}
-
-static GroupMeChannel *
-groupme_get_channel_global_name(GroupMeAccount *da, const gchar *name)
-{
-	GHashTableIter guild_iter, channel_iter;
-	gpointer key, value;
-
-	g_hash_table_iter_init(&guild_iter, da->new_guilds);
-
-	while (g_hash_table_iter_next(&guild_iter, &key, &value)) {
-		GroupMeGuild *guild = value;
-		g_hash_table_iter_init(&channel_iter, guild->channels);
-
-		while (g_hash_table_iter_next(&channel_iter, &key, &value)) {
-			GroupMeChannel *channel = value;
-
-			if (purple_strequal(name, channel->name)) {
-				return channel;
-			}
-		}
-	}
-
-	return NULL;
-}
-
-static GroupMeChannel *
-groupme_get_channel_global(GroupMeAccount *da, const gchar *id)
-{
-	return groupme_get_channel_global_int(da, to_int(id));
 }
 
 PurpleChatUserFlags
@@ -1046,29 +945,6 @@ static void groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user);
 static const gchar *groupme_normalise_room_name(const gchar *guild_name, const gchar *name);
 static GroupMeChannel *groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present);
 
-static guint64
-groupme_find_channel_by_name(GroupMeGuild *guild, gchar *name)
-{
-	GHashTableIter iter;
-	gpointer key;
-	gpointer value;
-	
-	if (!guild) {
-		return 0;
-	}
-	
-	g_hash_table_iter_init(&iter, guild->channels);
-
-	while (g_hash_table_iter_next(&iter, (gpointer *) &key, &value)) {
-		GroupMeChannel *channel = value;
-		if (purple_strequal(channel->name, name)) {
-			return channel->id;
-		}
-	}
-
-	return 0;
-}
-
 static gchar *
 groupme_create_nickname(GroupMeUser *author, GroupMeGuild *guild)
 {
@@ -1102,6 +978,7 @@ groupme_get_real_name(PurpleConnection *pc, gint id, const char *who)
 
 	guint64 room_id = *room_id_ptr;
 
+#if 0
 	GroupMeGuild *guild = NULL;
 	groupme_get_channel_global_int_guild(da, room_id, &guild);
 
@@ -1115,6 +992,7 @@ groupme_get_real_name(PurpleConnection *pc, gint id, const char *who)
 		GroupMeUser *user = groupme_get_user(da, *uid);
 		return groupme_create_fullname(user);
 	}
+#endif
 
 /* Probably a fullname already, bail out */
 bail:
@@ -1292,6 +1170,8 @@ groupme_got_nick_change(GroupMeAccount *da, GroupMeUser *user, GroupMeGuild *gui
 	GHashTableIter channel_iter;
 	gpointer key, value;
 
+	/* TODO: Nick */
+#if 0
 	g_hash_table_iter_init(&channel_iter, guild->channels);
 
 	while (g_hash_table_iter_next(&channel_iter, &key, &value)) {
@@ -1302,6 +1182,7 @@ groupme_got_nick_change(GroupMeAccount *da, GroupMeUser *user, GroupMeGuild *gui
 			purple_chat_conversation_rename_user(chat, old_safe, nick);
 		}
 	}
+#endif
 
 	g_free(nick);
 }
@@ -1411,9 +1292,9 @@ groupme_roomlist_got_list(GroupMeAccount *da, GroupMeGuild *guild, gpointer user
 	GHashTableIter iter;
 	gpointer key, value;
 
-	if (guild != NULL) {
-		g_hash_table_iter_init(&iter, guild->channels);
-	} 
+	/* TODO: ROOM LIST */
+
+#if 0
 
 	while (g_hash_table_iter_next(&iter, &key, &value)) {
 		GroupMeChannel *channel = value;
@@ -1458,6 +1339,7 @@ groupme_roomlist_got_list(GroupMeAccount *da, GroupMeGuild *guild, gpointer user
 		purple_roomlist_room_add(roomlist, room);
 		g_free(channel_id);
 	}
+#endif
 }
 
 static gchar *
@@ -1745,9 +1627,12 @@ groupme_got_guilds(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 static void
 groupme_get_history(GroupMeAccount *da, const gchar *channel, const gchar *last, int count)
 {
+#if 0
 	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%s/messages?limit=%d&after=%s", channel, count ? count : 100, last);
 	groupme_fetch_url(da, url, NULL, count ? groupme_got_history_static : groupme_got_history_of_room, count ? NULL : groupme_get_channel_global(da, channel));
 	g_free(url);
+#endif
+	printf("GET DM HISTORY\n");
 }
 
 static void
@@ -2413,6 +2298,11 @@ groupme_chat_nick(PurpleConnection *pc, int id, gchar *new_nick)
 		room_id = to_int(purple_conversation_get_name(PURPLE_CONVERSATION(chatconv)));
 	}
 
+	/* TODO: NICK */
+	printf("TODO: NICK\n");
+
+#if 0
+
 	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
 
 	GroupMeGuild *guild = NULL;
@@ -2432,6 +2322,7 @@ groupme_chat_nick(PurpleConnection *pc, int id, gchar *new_nick)
 	/* Propragate locally as well */
 	const gchar *old_nick = g_hash_table_lookup_int64(guild->nicknames, da->self_user_id);
 	groupme_got_nick_change(da, groupme_get_user(da, da->self_user_id), guild, new_nick, old_nick, TRUE);
+#endif
 }
 
 static GList *
@@ -2475,20 +2366,23 @@ groupme_chat_info_defaults(PurpleConnection *pc, const char *chatname)
 
 	if (chatname != NULL) {
 		if (str_is_number(chatname)) {
-			GroupMeChannel *channel = groupme_get_channel_global(da, chatname);
+			printf("Bad case 1\n");
+			//GroupMeChannel *channel = groupme_get_channel_global(da, chatname);
 
-			if (channel != NULL) {
-				g_hash_table_insert(defaults, "name", g_strdup(channel->name));
-			}
+			//if (channel != NULL) {
+				//g_hash_table_insert(defaults, "name", g_strdup(channel->name));
+			//}
 
 			g_hash_table_insert(defaults, "id", g_strdup(chatname));
 		} else {
-			GroupMeChannel *channel = groupme_get_channel_global_name(da, chatname);
+			printf("XXXX bad\n");
+
+			/*GroupMeChannel *channel = groupme_get_channel_global_name(da, chatname);
 
 			if (channel != NULL) {
 				g_hash_table_insert(defaults, "name", g_strdup(channel->name));
 				g_hash_table_insert(defaults, "id", from_int(channel->id));
-			}
+			}*/
 		}
 	}
 
@@ -2743,6 +2637,9 @@ groupme_mark_room_messages_read(GroupMeAccount *da, guint64 channel_id)
 		return;
 	}
 
+	printf("XXX: TODO mark room messages\n");
+#if 0
+
 	GroupMeChannel *channel = groupme_get_channel_global_int(da, channel_id);
 
 	guint64 last_message_id;
@@ -2780,6 +2677,7 @@ groupme_mark_room_messages_read(GroupMeAccount *da, guint64 channel_id)
 	url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages/%" G_GUINT64_FORMAT "/ack", channel_id, last_message_id);
 	groupme_fetch_url(da, url, "{\"token\":null}", NULL, NULL);
 	g_free(url);
+#endif
 }
 
 static void
