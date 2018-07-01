@@ -3345,10 +3345,6 @@ groupme_protocol_chat_iface_init(PurpleProtocolChatIface *prpl_info)
 static void
 groupme_protocol_server_iface_init(PurpleProtocolServerIface *prpl_info)
 {
-	prpl_info->add_buddy = groupme_add_buddy;
-	prpl_info->remove_buddy = groupme_buddy_remove;
-	prpl_info->group_buddy = groupme_fake_group_buddy;
-	prpl_info->rename_group = groupme_fake_group_rename;
 	prpl_info->get_info = groupme_get_info;
 }
 
