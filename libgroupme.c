@@ -1201,65 +1201,19 @@ groupme_normalise_room_name(const gchar *guild_name, const gchar *name)
 }
 
 static void
-groupme_roomlist_got_list(GroupMeAccount *da, GroupMeGuild *guild, gpointer user_data)
+groupme_roomlist_got_list(GroupMeAccount *da, GroupMeGuild *guild, PurpleRoomlist *roomlist, PurpleRoomlistRoom *category)
 {
-	PurpleRoomlist *roomlist = user_data;
-	const gchar *guild_name = guild ? guild->name : _("Group DMs");
-	PurpleRoomlistRoom *category = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_CATEGORY, guild_name, NULL);
-	purple_roomlist_room_add_field(roomlist, category, (gpointer) guild_name);
-	purple_roomlist_room_add(roomlist, category);
+	PurpleRoomlistRoom *room;
 
-	GHashTableIter iter;
-	gpointer key, value;
+	gchar *channel_id = from_int(guild->id);
 
-	/* TODO: ROOM LIST */
+	room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, guild->name, category);
 
-#if 0
+	purple_roomlist_room_add_field(roomlist, room, channel_id);
+	purple_roomlist_room_add_field(roomlist, room, guild->name);
 
-	while (g_hash_table_iter_next(&iter, &key, &value)) {
-		GroupMeChannel *channel = value;
-		PurpleRoomlistRoom *room;
-
-		gchar *channel_id = from_int(channel->id);
-		gchar *type_str;
-
-		room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, "", category);
-
-		purple_roomlist_room_add_field(roomlist, room, channel_id);
-		purple_roomlist_room_add_field(roomlist, room, channel->name);
-
-		switch (channel->type) {
-			case 0:
-				type_str = _("Text");
-				break;
-			
-			case 1:
-				type_str = _("Direct Message");
-				break;
-			
-			case 2:
-				type_str = _("Voice");
-				break;
-			
-			case 3:
-				type_str = _("Group DM");
-				break;
-			
-			case 4:
-				type_str = _("Guild Category");
-				break;
-
-			default:
-				type_str = _("Unknown");
-				break;
-		}
-
-		purple_roomlist_room_add_field(roomlist, room, type_str);
-
-		purple_roomlist_room_add(roomlist, room);
-		g_free(channel_id);
-	}
-#endif
+	purple_roomlist_room_add(roomlist, room);
+	g_free(channel_id);
 }
 
 static gchar *
@@ -1287,22 +1241,21 @@ groupme_roomlist_get_list(PurpleConnection *pc)
 	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Name"), "name", FALSE);
 	fields = g_list_append(fields, f);
 
-	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Room Type"), "type", FALSE);
-	fields = g_list_append(fields, f);
-
 	purple_roomlist_set_fields(roomlist, fields);
 	purple_roomlist_set_in_progress(roomlist, TRUE);
 
-	// Add group-DM's first
-	groupme_roomlist_got_list(da, NULL, roomlist);
-	
 	GHashTableIter iter;
 	gpointer key, guild;
+
+	PurpleRoomlistRoom *category = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_CATEGORY, "Rooms", NULL);
+	purple_roomlist_room_add_field(roomlist, category, (gpointer) "Rooms");
+	purple_roomlist_room_add(roomlist, category);
 
 	g_hash_table_iter_init(&iter, da->new_guilds);
 
 	while (g_hash_table_iter_next(&iter, &key, &guild)) {
-		groupme_roomlist_got_list(da, guild, roomlist);
+		printf("Iterating...\n");
+		groupme_roomlist_got_list(da, guild, roomlist, category);
 	}
 
 	purple_roomlist_set_in_progress(roomlist, FALSE);
