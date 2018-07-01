@@ -97,7 +97,6 @@ typedef struct {
 	guint64 id;
 	gchar *name;
 	int color;
-	gint64 permissions;
 } GroupMeGuildRole;
 
 typedef struct {
@@ -114,8 +113,6 @@ typedef struct {
 	GroupMeChannelType type;
 	int position;
 	guint64 last_message_id;
-	GHashTable *permission_user_overrides;
-	GHashTable *permission_role_overrides;
 	GList *recipients; /* For group DMs */
 } GroupMeChannel;
 
@@ -235,7 +232,6 @@ groupme_chat_hash(guint64 chat_id)
 static void groupme_free_guild_membership(gpointer data);
 static void groupme_free_guild_role(gpointer data);
 static void groupme_free_channel(gpointer data);
-static gboolean groupme_permission_is_role(JsonObject *json);
 
 /* creating */
 
@@ -262,18 +258,6 @@ groupme_new_guild(JsonObject *json)
 	return guild;
 }
 
-static GroupMePermissionOverride *
-groupme_new_permission_override(JsonObject *json)
-{
-	GroupMePermissionOverride *permission = g_new0(GroupMePermissionOverride, 1);
-
-	permission->id = to_int(json_object_get_string_member(json, "id"));
-	permission->deny = json_object_get_int_member(json, "deny");
-	permission->allow = json_object_get_int_member(json, "allow");
-
-	return permission;
-}
-
 static GroupMeChannel *
 groupme_new_channel(JsonObject *json)
 {
@@ -285,9 +269,6 @@ groupme_new_channel(JsonObject *json)
 	channel->position = json_object_get_int_member(json, "position");
 	channel->type = json_object_get_int_member(json, "type");
 	channel->last_message_id = to_int(json_object_get_string_member(json, "last_message_id"));
-
-	channel->permission_user_overrides = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, g_free);
-	channel->permission_role_overrides = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, g_free);
 
 	channel->recipients = NULL;
 
@@ -316,7 +297,6 @@ groupme_new_guild_role(JsonObject *json)
 	guild_role->id = to_int(json_object_get_string_member(json, "id"));
 	guild_role->name = g_strdup(json_object_get_string_member(json, "name"));
 	guild_role->color = json_object_get_int_member(json, "color");
-	guild_role->permissions = json_object_get_int_member(json, "permissions");
 
 	return guild_role;
 }
@@ -377,8 +357,6 @@ groupme_free_channel(gpointer data)
 	g_free(channel->name);
 	g_free(channel->topic);
 
-	g_hash_table_unref(channel->permission_user_overrides);
-	g_hash_table_unref(channel->permission_role_overrides);
 	g_list_free_full(channel->recipients, g_free);
 
 	g_free(channel);
@@ -477,23 +455,6 @@ groupme_add_guild_role(GroupMeGuild *guild, JsonObject *json)
 	GroupMeGuildRole *role = groupme_new_guild_role(json);
 	g_hash_table_replace_int64(guild->roles, role->id, role);
 	return role;
-}
-
-static GroupMePermissionOverride *
-groupme_add_permission_override(GroupMeChannel *channel, JsonObject *json)
-{
-	GroupMePermissionOverride *permission_override = groupme_new_permission_override(json);
-	gboolean is_role = groupme_permission_is_role(json);
-	GHashTable *overrides = is_role ? channel->permission_role_overrides : channel->permission_user_overrides;
-	g_hash_table_replace_int64(overrides, permission_override->id, permission_override);
-	return permission_override;
-}
-
-/* managing */
-static gboolean
-groupme_permission_is_role(JsonObject *json)
-{
-	return purple_strequal(json_object_get_string_member(json, "type"), "role");
 }
 
 void
@@ -724,154 +685,6 @@ groupme_get_channel_global(GroupMeAccount *da, const gchar *id)
 {
 	return groupme_get_channel_global_int(da, to_int(id));
 }
-/* debug */
-
-#define groupme_print_append(L, B, R, M, D) \
-	g_string_printf((R), (M), (D));         \
-	groupme_print_append_row((L), (B), (R));
-
-#ifndef IGNORE_PRINTS
-static void
-groupme_print_append_row(int level, GString *buffer, GString *row)
-{
-	for (int i = 0; i < level; i++) {
-		g_string_prepend_c(row, '\t');
-	}
-
-	g_string_append(buffer, row->str);
-	g_string_append_c(buffer, '\n');
-}
-
-static void
-groupme_print_permission_override(GString *buffer, GHashTable *permission_overrides, const gchar *type)
-{
-	GHashTableIter permission_override_iter;
-	GString *row_buffer = g_string_new("");
-	gpointer key, value;
-
-	type = purple_strequal("role", type) ? "Role override count: %d" : "User override count: %d";
-	groupme_print_append(2, buffer, row_buffer, type, g_hash_table_size(permission_overrides));
-	g_hash_table_iter_init(&permission_override_iter, permission_overrides);
-
-	while (g_hash_table_iter_next(&permission_override_iter, &key, &value)) {
-		GroupMePermissionOverride *permission_override = value;
-
-		groupme_print_append(3, buffer, row_buffer, "Override id: %" G_GUINT64_FORMAT, permission_override->id);
-		groupme_print_append(4, buffer, row_buffer, "Allow: %" G_GUINT64_FORMAT, permission_override->allow);
-		groupme_print_append(4, buffer, row_buffer, "Deny: %" G_GUINT64_FORMAT, permission_override->deny);
-	}
-}
-#endif
-
-static void
-groupme_print_guilds(GHashTable *guilds)
-{
-#ifdef IGNORE_PRINTS
-	return;
-#else
-	GString *buffer = g_string_new("\n");
-	GString *row_buffer = g_string_new("");
-	GHashTableIter guild_iter, channel_iter, role_iter;
-	gpointer key, value;
-
-	g_hash_table_iter_init(&guild_iter, guilds);
-
-	while (g_hash_table_iter_next(&guild_iter, &key, &value)) {
-		GroupMeGuild *guild = value;
-
-		groupme_print_append(0, buffer, row_buffer, "Guild id: %" G_GUINT64_FORMAT, guild->id);
-		groupme_print_append(1, buffer, row_buffer, "Name: %s", guild->name);
-		groupme_print_append(1, buffer, row_buffer, "Icon: %s", guild->icon);
-		groupme_print_append(1, buffer, row_buffer, "Owner: %" G_GUINT64_FORMAT, guild->owner);
-		groupme_print_append(1, buffer, row_buffer, "Afk timeout: %d", guild->afk_timeout);
-		groupme_print_append(1, buffer, row_buffer, "Afk channel: %s", guild->afk_voice_channel);
-
-		g_hash_table_iter_init(&role_iter, guild->roles);
-
-		while (g_hash_table_iter_next(&role_iter, &key, &value)) {
-			GroupMeGuildRole *role = value;
-			groupme_print_append(1, buffer, row_buffer, "Role id: %" G_GUINT64_FORMAT, role->id);
-			groupme_print_append(2, buffer, row_buffer, "Name: %s", role->name);
-			groupme_print_append(2, buffer, row_buffer, "Color: %d", role->color);
-			groupme_print_append(2, buffer, row_buffer, "Permissions: %" G_GUINT64_FORMAT, role->permissions);
-		}
-
-		groupme_print_append(1, buffer, row_buffer, "Member count: %d", guild->members->len);
-
-		for (guint i = 0; i < guild->members->len; i++) {
-			guint64 member_id = g_array_index(guild->members, guint64, i);
-			groupme_print_append(3, buffer, row_buffer, "Member id: %" G_GUINT64_FORMAT, member_id);
-		}
-
-		g_hash_table_iter_init(&channel_iter, guild->channels);
-
-		while (g_hash_table_iter_next(&channel_iter, &key, &value)) {
-			GroupMeChannel *channel = value;
-
-			groupme_print_append(1, buffer, row_buffer, "Channel id: %" G_GUINT64_FORMAT, channel->id);
-			groupme_print_append(2, buffer, row_buffer, "Name: %s", channel->name);
-			groupme_print_append(2, buffer, row_buffer, "Topic: %s", channel->topic);
-			groupme_print_append(2, buffer, row_buffer, "Type: %d", channel->type);
-			groupme_print_append(2, buffer, row_buffer, "Position: %d", channel->position);
-			groupme_print_append(2, buffer, row_buffer, "Last message: %" G_GUINT64_FORMAT, channel->last_message_id);
-
-			groupme_print_permission_override(buffer, channel->permission_role_overrides, "Role");
-			groupme_print_permission_override(buffer, channel->permission_user_overrides, "User");
-		}
-	}
-
-	purple_debug_info("groupme", "%s", buffer->str);
-	g_string_free(buffer, TRUE);
-	g_string_free(row_buffer, TRUE);
-#endif
-}
-
-static void
-groupme_print_users(GHashTable *users)
-{
-#ifdef IGNORE_PRINTS
-	return;
-#else
-	GString *buffer = g_string_new("\n");
-	GString *row_buffer = g_string_new("");
-	GHashTableIter user_iter, guild_membership_iter;
-	gpointer key, value;
-
-	g_hash_table_iter_init(&user_iter, users);
-
-	while (g_hash_table_iter_next(&user_iter, &key, &value)) {
-		GroupMeUser *user = value;
-
-		groupme_print_append(0, buffer, row_buffer, "User id: %" G_GUINT64_FORMAT, user->id);
-		groupme_print_append(1, buffer, row_buffer, "Name: %s", user->name);
-		groupme_print_append(1, buffer, row_buffer, "Discriminator: %d", user->discriminator);
-		groupme_print_append(1, buffer, row_buffer, "Game: %s", user->game);
-		groupme_print_append(1, buffer, row_buffer, "Avatar: %s", user->avatar);
-		groupme_print_append(1, buffer, row_buffer, "Status: %d", user->status);
-
-		g_hash_table_iter_init(&guild_membership_iter, user->guild_memberships);
-
-		while (g_hash_table_iter_next(&guild_membership_iter, &key, &value)) {
-			GroupMeGuildMembership *guild_membership = value;
-
-			groupme_print_append(1, buffer, row_buffer, "Guild membership id: %" G_GUINT64_FORMAT, guild_membership->id);
-			groupme_print_append(2, buffer, row_buffer, "Nick: %s", guild_membership->nick);
-			groupme_print_append(2, buffer, row_buffer, "Joined at: %s", guild_membership->joined_at);
-			groupme_print_append(2, buffer, row_buffer, "Role count: %d", guild_membership->roles->len);
-
-			for (guint i = 0; i < guild_membership->roles->len; i++) {
-				guint64 role_id = g_array_index(guild_membership->roles, guint64, i);
-				groupme_print_append(3, buffer, row_buffer, "Role id: %" G_GUINT64_FORMAT, role_id);
-			}
-		}
-	}
-
-	purple_debug_info("groupme", "%s", buffer->str);
-
-	g_string_free(buffer, TRUE);
-	g_string_free(row_buffer, TRUE);
-#endif
-}
 
 PurpleChatUserFlags
 groupme_get_user_flags(GroupMeAccount *da, GroupMeGuild *guild, GroupMeUser *user)
@@ -894,11 +707,13 @@ groupme_get_user_flags(GroupMeAccount *da, GroupMeGuild *guild, GroupMeUser *use
 		PurpleChatUserFlags this_flag = PURPLE_CHAT_USER_NONE;
 
 		if (role != NULL) {
+#if 0
 			if (role->permissions & 0x8) { /* Admin */
 				this_flag = PURPLE_CHAT_USER_OP;
 			} else if (role->permissions & (0x2 | 0x4)) { /* Ban/kick */
 				this_flag = PURPLE_CHAT_USER_HALFOP;
 			}
+#endif
 		}
 
 		if (this_flag > best_flag) {
@@ -1315,159 +1130,7 @@ static void groupme_got_avatar(GroupMeAccount *da, JsonNode *node, gpointer user
 static void groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user);
 
 static const gchar *groupme_normalise_room_name(const gchar *guild_name, const gchar *name);
-static guint64 groupme_compute_permission(GroupMeAccount *da, GroupMeUser *user, GroupMeChannel *channel);
 static GroupMeChannel *groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present);
-
-static gboolean
-groupme_replace_channel(const GMatchInfo *match, GString *result, gpointer user_data)
-{
-	GroupMeAccount *da = user_data;
-	gchar *match_string = g_match_info_fetch(match, 0);
-	gchar *channel_id = g_match_info_fetch(match, 1);
-	GroupMeChannel *channel = groupme_get_channel_global(da, channel_id);
-
-	if (channel) {
-		/* TODO make this a clickable link */
-		GroupMeGuild *guild = groupme_get_guild(da, channel->guild_id);
-
-		if (guild) {
-			g_string_append_printf(result, "%s", groupme_normalise_room_name(guild->name, channel->name));
-		} else {
-			g_string_append_printf(result, "#%s", channel->name);
-		}
-	} else {
-		g_string_append(result, match_string);
-	}
-
-	g_free(channel_id);
-	g_free(match_string);
-
-	return FALSE;
-}
-
-#define COLOR_START "<font color=\"#%06X\">"
-#define COLOR_END "</font>"
-
-static gboolean
-groupme_replace_role(const GMatchInfo *match, GString *result, gpointer user_data)
-{
-	GroupMeAccountGuild *ag = user_data;
-	/* GroupMeAccount *da = ag->account; */
-	GroupMeGuild *guild = ag->guild;
-
-	gchar *match_string = g_match_info_fetch(match, 0);
-	gchar *role_id = g_match_info_fetch(match, 1);
-	guint64 rid = to_int(role_id);
-
-	GroupMeGuildRole *role = g_hash_table_lookup_int64(guild->roles, rid);
-
-	if (rid == guild->id) {
-		g_string_append(result, "<b>@everyone</b>");
-	} else if (role) {
-		/* TODO make this a clickable link */
-
-		if (role->color) {
-			g_string_append_printf(result, COLOR_START "<b>@%s</b>" COLOR_END, role->color, role->name);
-		} else {
-			g_string_append_printf(result, "<b>@%s</b>", role->name);
-		}
-	} else {
-		g_string_append(result, match_string);
-	}
-
-	g_free(role_id);
-	g_free(match_string);
-
-	return FALSE;
-}
-
-
-static gboolean
-groupme_replace_emoji(const GMatchInfo *match, GString *result, gpointer user_data)
-{
-	gchar *alt_text = g_match_info_fetch(match, 1);
-	gchar *emoji_id = g_match_info_fetch(match, 2);
-
-	/* TODO: download and cache emoji as a PurpleStoredImage? */
-	g_string_append_printf(result, "<img src=\"https://cdn.groupmeapp.com/emojis/%s.png\" alt=\":%s:\"/>", emoji_id, alt_text);
-
-	g_free(emoji_id);
-	g_free(alt_text);
-
-	return FALSE;
-}
-
-static gboolean
-groupme_replace_mention(const GMatchInfo *match, GString *result, gpointer user_data)
-{
-	GroupMeAccountGuild *ag = user_data;
-	GroupMeAccount *da = ag->account;
-	GroupMeGuild *guild = ag->guild;
-	gchar *match_string = g_match_info_fetch(match, 0);
-
-	gchar *snowflake_str = g_match_info_fetch(match, 1);
-	guint64 snowflake = to_int(snowflake_str);
-	g_free(snowflake_str);
-
-	GroupMeUser *mention_user = groupme_get_user(da, snowflake);
-
-	if (mention_user) {
-		/* TODO make this a clickable link */
-		gchar *name = groupme_create_nickname(mention_user, guild);
-
-		PurpleBuddy *buddy = purple_blist_find_buddy(da->account, name);
-
-		if (buddy && purple_buddy_get_alias(buddy)) {
-			g_free(name);
-			name = g_strdup(purple_buddy_get_alias(buddy));
-		} else if (!guild && snowflake == da->self_user_id && purple_account_get_private_alias(da->account)) {
-			g_free(name);
-			name = g_strdup(purple_account_get_private_alias(da->account));
-		}
-
-		g_string_append_printf(result, "<b>@%s</b>", name);
-		g_free(name);
-	} else {
-		g_string_append(result, match_string);
-	}
-
-	g_free(match_string);
-
-	return FALSE;
-}
-
-static gchar *
-groupme_replace_mentions_bare(GroupMeAccount *da, GroupMeGuild *g, gchar *message)
-{
-	GroupMeAccountGuild ag = { .account = da, .guild = g };
-	gchar *tmp = g_regex_replace_eval(mention_regex, message, -1, 0, 0, groupme_replace_mention, &ag, NULL);
-
-	if (tmp != NULL) {
-		g_free(message);
-		message = tmp;
-	}
-
-	/* Replace <#channel_id> with channel names */
-	tmp = g_regex_replace_eval(channel_mentions_regex, message, -1, 0, 0, groupme_replace_channel, da, NULL);
-
-	if (tmp != NULL) {
-		g_free(message);
-		message = tmp;
-	}
-
-	/* Replace <@&role_id> with role names */
-	if (g) {
-		GroupMeAccountGuild ag = { .account = da, .guild = g };
-		tmp = g_regex_replace_eval(role_mentions_regex, message, -1, 0, 0, groupme_replace_role, &ag, NULL);
-
-		if (tmp != NULL) {
-			g_free(message);
-			message = tmp;
-		}
-	}
-
-	return message;
-}
 
 static guint64
 groupme_find_role_by_name(GroupMeGuild *guild, const gchar *name)
@@ -1516,92 +1179,6 @@ groupme_find_channel_by_name(GroupMeGuild *guild, gchar *name)
 	}
 
 	return 0;
-}
-
-static gboolean
-groupme_make_mention(const GMatchInfo *match, GString *result, gpointer user_data)
-{
-	GroupMeAccountGuild *ag = user_data;
-	GroupMeAccount *da = ag->account;
-	GroupMeGuild *guild = ag->guild;
-
-	gchar *match_string = g_match_info_fetch(match, 0);
-	gchar *identifier = g_match_info_fetch(match, 1);
-
-	/* Try to find user by discriminator */
-	GroupMeUser *user = groupme_get_user_fullname(da, identifier);
-
-	/* If that fails, find it by alias */
-	if (!user) {
-		GHashTableIter iter;
-		gpointer key, value;
-		g_hash_table_iter_init(&iter, da->new_users);
-
-		while (g_hash_table_iter_next(&iter, &key, &value)) {
-			/* Key is the user ID, value is GroupMeUser */
-
-			GroupMeUser *u = value;
-			gchar *username = groupme_create_fullname(u);
-			PurpleBuddy *buddy = purple_blist_find_buddy(da->account, username);
-			g_free(username);
-
-			if (buddy && purple_strequal(purple_buddy_get_alias(buddy), identifier)) {
-				user = u;
-				break;
-			}
-		}
-	}
-
-	/* If that fails, find it by nick */
-	if (!user && guild) {
-		guint64 *uid = g_hash_table_lookup(guild->nicknames_rev, identifier);
-
-		if (uid) {
-			user = groupme_get_user(da, *uid);
-		}
-	}
-
-	if (user) {
-		g_string_append_printf(result, "&lt;@%" G_GUINT64_FORMAT "&gt; ", user->id);
-	} else if (guild != NULL) {
-		/* If that fails, find a role */
-		guint64 role = groupme_find_role_by_name(guild, identifier);
-
-		if (role) {
-			g_string_append_printf(result, "&lt;@&amp;%" G_GUINT64_FORMAT "&gt; ", role);
-		} else {
-			/* If that fails, find a channel */
-			guint64 channel = groupme_find_channel_by_name(guild, identifier);
-
-			if(channel) {
-				g_string_append_printf(result, "&lt;#%" G_GUINT64_FORMAT "&gt; ", channel);
-			} else {
-				/* If all else fails, trap out */
-				g_string_append(result, match_string);
-			}
-		}
-	} else {
-		g_string_append(result, match_string);
-	}
-
-	g_free(match_string);
-	g_free(identifier);
-
-	return FALSE;
-}
-
-static gchar *
-groupme_make_mentions(GroupMeAccount *da, GroupMeGuild *guild, gchar *message)
-{
-	GroupMeAccountGuild ag = {.account = da, .guild = guild };
-	gchar *tmp = g_regex_replace_eval(natural_mention_regex, message, -1, 0, 0, groupme_make_mention, &ag, NULL);
-
-	if (tmp != NULL) {
-		g_free(message);
-		return tmp;
-	}
-
-	return message;
 }
 
 static gchar *
@@ -2183,17 +1760,12 @@ groupme_process_dispatch(GroupMeAccount *da, const gchar *type, JsonObject *data
 
 				GroupMeUser *user = groupme_upsert_user(da->new_users, json_object_get_object_member(presence, "user"));
 				
-				guint64 permission = groupme_compute_permission(da, user, channel);
-
-				/* must have READ_MESSAGES */
-				if ((permission & 0x400)) {
-					PurpleChatUserFlags cbflags = groupme_get_user_flags(da, guild, user);
-					gchar *nickname = groupme_create_nickname(user, guild);
-					
-					if (nickname != NULL) {
-						users = g_list_prepend(users, nickname);
-						flags = g_list_prepend(flags, GINT_TO_POINTER(cbflags));
-					}
+				PurpleChatUserFlags cbflags = groupme_get_user_flags(da, guild, user);
+				gchar *nickname = groupme_create_nickname(user, guild);
+				
+				if (nickname != NULL) {
+					users = g_list_prepend(users, nickname);
+					flags = g_list_prepend(flags, GINT_TO_POINTER(cbflags));
 				}
 			}
 			
@@ -3652,167 +3224,7 @@ groupme_set_room_last_id(GroupMeAccount *da, guint64 id, guint64 last_id)
 	g_free(channel_id);
 }
 
-/* TODO: Cache better, sane defaults */
-
-/* https://support.groupmeapp.com/hc/en-us/articles/206141927-How-is-the-permission-hierarchy-structured- */
-
-static guint64
-groupme_permission_role(GroupMeGuild *guild, guint64 r, guint64 permission)
-{
-	GroupMeGuildRole *role = g_hash_table_lookup_int64(guild->roles, r);
-	return role ? (permission | role->permissions) : permission;
-}
-
-static guint64
-groupme_permission_role_override(GroupMeChannel *channel, guint64 role, guint64 permission)
-{
-	GroupMePermissionOverride *ro =
-	  g_hash_table_lookup_int64(channel->permission_role_overrides, role);
-
-	return ro ? ((permission & ~(ro->deny)) | ro->allow) : permission;
-}
-
-static guint64
-groupme_compute_permission(GroupMeAccount *da, GroupMeUser *user, GroupMeChannel *channel)
-{
-	guint64 uid = user->id;
-	guint64 permissions = 0;
-
-	GroupMeGuildMembership *guild_membership = g_hash_table_lookup_int64(user->guild_memberships, channel->guild_id);
-
-	if (guild_membership) {
-		/* Should always exist, but just in case... */
-
-		GroupMeGuild *guild = groupme_get_guild(da, channel->guild_id);
-
-		/* @everyone */
-		permissions = groupme_permission_role(guild, channel->guild_id, permissions);
-
-		for (guint i = 0; i < guild_membership->roles->len; i++) {
-			guint64 r = g_array_index(guild_membership->roles, guint64, i);
-			permissions = groupme_permission_role(guild, r, permissions);
-		}
-
-		permissions = groupme_permission_role_override(channel, channel->guild_id, permissions);
-
-		for (guint i = 0; i < guild_membership->roles->len; i++) {
-			guint64 role = g_array_index(guild_membership->roles, guint64, i);
-			permissions = groupme_permission_role_override(channel, role, permissions);
-		}
-	}
-
-	/* Check special permission overrides just for us */
-
-	GroupMePermissionOverride *uo =
-	  g_hash_table_lookup_int64(channel->permission_user_overrides, uid);
-
-	if (uo) {
-		permissions = (permissions & ~(uo->deny)) | uo->allow;
-	}
-
-	return permissions;
-}
-
 static void groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata);
-
-static void
-groupme_got_channel_info(GroupMeAccount *da, JsonNode *node, gpointer user_data)
-{
-	JsonObject *channel = json_node_get_object(node);
-	const gchar *id = json_object_get_string_member(channel, "id");
-
-	PurpleChatConversation *chatconv;
-
-	if (id == NULL) {
-		/* No permissions?  Should be an error message in json_object_get_string_member(channel, "message") */
-		return;
-	}
-
-	guint64 tmp = to_int(id);
-	chatconv = purple_conversations_find_chat(da->pc, groupme_chat_hash(tmp));
-
-	if (chatconv == NULL) {
-		return;
-	}
-
-	if (json_object_has_member(channel, "topic")) {
-		purple_chat_conversation_set_topic(chatconv, NULL, json_object_get_string_member(channel, "topic"));
-	} else {
-		purple_chat_conversation_set_topic(chatconv, NULL, json_object_get_string_member(channel, "name"));
-	}
-
-	if (json_object_has_member(channel, "recipients")) {
-		// This is a Group DM
-		JsonArray *recipients = json_object_get_array_member(channel, "recipients");
-		gint i;
-		guint len = json_array_get_length(recipients);
-		GList *users = NULL, *flags = NULL;
-
-		for (i = len - 1; i >= 0; i--) {
-			JsonObject *recipient = json_array_get_object_element(recipients, i);
-			GroupMeUser *user = groupme_upsert_user(da->new_users, recipient);
-			gchar *fullname = groupme_create_fullname(user);
-
-			if (fullname != NULL) {
-				users = g_list_prepend(users, fullname);
-				flags = g_list_prepend(flags, PURPLE_CHAT_USER_NONE);
-			}
-		}
-
-		// Add self
-		users = g_list_prepend(users, g_strdup(da->self_username));
-		flags = g_list_prepend(flags, PURPLE_CHAT_USER_NONE);
-
-		purple_chat_conversation_clear_users(chatconv);
-		purple_chat_conversation_add_users(chatconv, users, NULL, flags, FALSE);
-
-		while (users != NULL) {
-			g_free(users->data);
-			users = g_list_delete_link(users, users);
-		}
-
-		g_list_free(users);
-		g_list_free(flags);
-	} else if (json_object_has_member(channel, "permission_overwrites")) {
-		// This is a guild/server room
-		GroupMeGuild *guild = groupme_get_guild(da, to_int(json_object_get_string_member(channel, "guild_id")));
-
-		PurpleChatConversation *chat = chatconv;
-		GList *users = NULL, *flags = NULL;
-		GroupMeChannel *chnl = groupme_get_channel_global_int(da, tmp);
-		
-		for (guint i = 0; i < guild->members->len; i++) {
-			GroupMeUser *user = groupme_get_user(da, g_array_index(guild->members, guint64, i));
-			
-			/* Ensure that we actually have permissions for this channel */
-			guint64 permission = groupme_compute_permission(da, user, chnl);
-
-			/* must have READ_MESSAGES */
-			if ((permission & 0x400)) {
-				PurpleChatUserFlags cbflags = groupme_get_user_flags(da, guild, user);
-				gchar *nickname = groupme_create_nickname(user, guild);
-
-				if (nickname != NULL && user->status != USER_OFFLINE) {
-					users = g_list_prepend(users, nickname);
-					flags = g_list_prepend(flags, GINT_TO_POINTER(cbflags));
-				}
-			}
-		}
-
-		if (users != NULL) {
-			purple_chat_conversation_clear_users(chat);
-			purple_chat_conversation_add_users(chat, users, NULL, flags, FALSE);
-		}
-
-		while (users != NULL) {
-			g_free(users->data);
-			users = g_list_delete_link(users, users);
-		}
-
-		g_list_free(users);
-		g_list_free(flags);
-	}
-}
 
 static GroupMeChannel *
 groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present)
@@ -4354,7 +3766,7 @@ groupme_got_info(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 				guint64 role_id = g_array_index(membership->roles, guint64, i);
 				GroupMeGuildRole *role = g_hash_table_lookup_int64(guild->roles, role_id);
 
-				g_string_append_printf(role_str, " [" COLOR_START "%s" COLOR_END "]", role->color, role->name);
+				g_string_append_printf(role_str, role->name);
 			}
 
 			purple_notify_user_info_add_pair_html(user_info, guild->name, g_string_free(role_str, FALSE));
