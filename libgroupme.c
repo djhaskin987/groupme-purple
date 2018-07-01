@@ -927,7 +927,6 @@ void groupme_handle_add_new_user(GroupMeAccount *ya, JsonObject *obj);
 
 PurpleGroup *groupme_get_or_create_default_group();
 
-static void groupme_create_relationship(GroupMeAccount *da, JsonObject *json);
 static void groupme_got_history_static(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_populate_guild(GroupMeAccount *da, JsonObject *guild);
@@ -1495,79 +1494,6 @@ typedef struct {
 	GroupMeAccount *da;
 	GroupMeUser *user;
 } GroupMeUserInviteResponseStore;
-
-static void
-groupme_friends_auth_accept(
-#if PURPLE_VERSION_CHECK(3, 0, 0)
-  const gchar *response,
-#endif
-  gpointer userdata)
-{
-	GroupMeUserInviteResponseStore *store = userdata;
-	GroupMeUser *user = store->user;
-	GroupMeAccount *da = store->da;
-
-	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/users/@me/relationships/%" G_GUINT64_FORMAT, user->id);
-	groupme_fetch_url_with_method(da, "PUT", url, NULL, NULL, NULL);
-	g_free(url);
-
-	g_free(store);
-}
-
-static void
-groupme_friends_auth_reject(
-#if PURPLE_VERSION_CHECK(3, 0, 0)
-  const gchar *response,
-#endif
-  gpointer userdata)
-{
-	GroupMeUserInviteResponseStore *store = userdata;
-	GroupMeUser *user = store->user;
-	GroupMeAccount *da = store->da;
-
-	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/users/@me/relationships/%" G_GUINT64_FORMAT, user->id);
-	groupme_fetch_url_with_method(da, "DELETE", url, NULL, NULL, NULL);
-	g_free(url);
-
-	g_free(store);
-}
-
-static void
-groupme_create_relationship(GroupMeAccount *da, JsonObject *json)
-{
-	GroupMeUser *user = groupme_upsert_user(da->new_users, json_object_get_object_member(json, "user"));
-	gint64 type = json_object_get_int_member(json, "type");
-	gchar *merged_username = groupme_create_fullname(user);
-
-	if (type == 3) {
-		/* request add */
-		GroupMeUserInviteResponseStore *store = g_new0(GroupMeUserInviteResponseStore, 1);
-
-		store->da = da;
-		store->user = user;
-
-		purple_account_request_authorization(da->account, merged_username, NULL, NULL, NULL, FALSE, groupme_friends_auth_accept, groupme_friends_auth_reject, store);
-	} else if (type == 1) {
-		/* buddy on list */
-		PurpleBuddy *buddy = purple_blist_find_buddy(da->account, merged_username);
-
-		if (buddy == NULL) {
-			buddy = purple_buddy_new(da->account, merged_username, user->name);
-			purple_blist_add_buddy(buddy, NULL, groupme_get_or_create_default_group(), NULL);
-		}
-
-		groupme_get_avatar(da, user);
-		
-	} else if (type == 2) {
-		/* blocked buddy */
-		purple_account_privacy_deny_add(da->account, merged_username, TRUE);
-		
-	} else if (type == 4) {
-		/* pending buddy */
-	}
-
-	g_free(merged_username);
-}
 
 static void
 groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
@@ -2919,68 +2845,6 @@ groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user)
 }
 
 static void
-groupme_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group
-#if PURPLE_VERSION_CHECK(3, 0, 0)
-				  ,
-				  const char *message
-#endif
-				  )
-{
-	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
-	const gchar *buddy_name = purple_buddy_get_name(buddy);
-	JsonObject *data;
-	gchar *postdata;
-	gchar **usersplit;
-
-	if (!strchr(buddy_name, '#')) {
-		purple_blist_remove_buddy(buddy);
-		return;
-	}
-
-	usersplit = g_strsplit_set(buddy_name, "#", 2);
-	data = json_object_new();
-	json_object_set_string_member(data, "username", usersplit[0]);
-	json_object_set_string_member(data, "discriminator", usersplit[1]);
-
-	postdata = json_object_to_string(data);
-
-	groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/api/v6/users/@me/relationships", postdata, NULL, NULL);
-
-	g_free(postdata);
-	g_strfreev(usersplit);
-	json_object_unref(data);
-}
-
-static void
-groupme_buddy_remove(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group)
-{
-	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
-	const gchar *buddy_name = purple_buddy_get_name(buddy);
-	gchar *url;
-	GroupMeUser *user = groupme_get_user_fullname(da, buddy_name);
-
-	if (!user) {
-		return;
-	}
-
-	url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/users/@me/relationships/%" G_GUINT64_FORMAT, user->id);
-	groupme_fetch_url_with_method(da, "DELETE", url, NULL, NULL, NULL);
-	g_free(url);
-}
-
-static void
-groupme_fake_group_buddy(PurpleConnection *pc, const char *who, const char *old_group, const char *new_group)
-{
-	/* Do nothing to stop the remove+add behaviour */
-}
-
-static void
-groupme_fake_group_rename(PurpleConnection *pc, const char *old_name, PurpleGroup *group, GList *moved_buddies)
-{
-	/* Do nothing to stop the remove+add behaviour */
-}
-
-static void
 groupme_got_info(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
 	GroupMeUser *user = user_data;
@@ -3416,9 +3280,6 @@ plugin_init(PurplePlugin *plugin)
 #if PURPLE_MINOR_VERSION >= 5
 	prpl_info->struct_size = sizeof(PurplePluginProtocolInfo);
 #endif
-#if PURPLE_MINOR_VERSION >= 8
-/* prpl_info->add_buddy_with_invite = groupme_add_buddy_with_invite; */
-#endif
 
 	prpl_info->options = OPT_PROTO_CHAT_TOPIC | OPT_PROTO_SLASH_COMMANDS_NATIVE | OPT_PROTO_UNIQUE_CHATNAME;
 	prpl_info->protocol_options = groupme_add_account_options(prpl_info->protocol_options);
@@ -3451,10 +3312,6 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->chat_send = groupme_chat_send;
 	prpl_info->set_chat_topic = groupme_chat_set_topic;
 	prpl_info->get_cb_real_name = groupme_get_real_name;
-	prpl_info->add_buddy = groupme_add_buddy;
-	prpl_info->remove_buddy = groupme_buddy_remove;
-	prpl_info->group_buddy = groupme_fake_group_buddy;
-	prpl_info->rename_group = groupme_fake_group_rename;
 	prpl_info->get_info = groupme_get_info;
 	prpl_info->add_deny = groupme_block_user;
 	prpl_info->rem_deny = groupme_unblock_user;
