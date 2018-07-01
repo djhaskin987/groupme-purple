@@ -1785,7 +1785,6 @@ bail:
 static guint64
 groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean is_dm)
 {
-	printf("Processing %d\n", channel);
 	const gchar *guid = json_object_get_string_member(data, "source_guid");
 	guint64 author_id = to_int(json_object_get_string_member(data, "sender_id"));
 
@@ -1804,19 +1803,14 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 	gint i;
 
 	/* Drop our own messages that were pinged back to us */
-#if 0
 	if ((author_id == da->self_user_id) && g_hash_table_remove(da->sent_message_ids, guid))
 		return;
-#endif
 
-#if 0
-	if (author_id == da->self_user_id) {
+	if (author_id == da->self_user_id && is_dm) {
 		flags = PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED;
 	} else {
 		flags = PURPLE_MESSAGE_RECV;
 	}
-#endif
-	flags = PURPLE_MESSAGE_RECV;
 
 #if 0
 	if (mentions) {
