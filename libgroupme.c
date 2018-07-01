@@ -4429,13 +4429,14 @@ groupme_make_guid()
 }
 
 static gint
-groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gchar *message)
+groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gchar *message, gboolean is_dm)
 {
 	JsonObject *data = json_object_new();
 	JsonObject *msg = json_object_new();
 	gchar *url;
 	gchar *postdata;
 
+	gchar *rid = from_int(room_id);
 	gchar *guid = groupme_make_guid();
 
 	/* Remember we sent it so we don't double display */
@@ -4443,15 +4444,27 @@ groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gch
 
 	json_object_set_string_member(msg, "text", message);
 	json_object_set_string_member(msg, "source_guid", guid);
-	json_object_set_object_member(data, "message", msg);
+	json_object_set_object_member(data, is_dm ? "direct_message" : "message", msg);
 
-	url = g_strdup_printf("https://" GROUPME_API_SERVER "/groups/%" G_GUINT64_FORMAT "/messages?", room_id);
+	if (is_dm) {
+		json_object_set_string_member(msg, "recipient_id", rid);
+	}
+
+	/* DMs use a different endpoint than group messages */
+
+	if (is_dm) {
+		url = g_strdup("https://" GROUPME_API_SERVER "/direct_messages?");
+	} else {
+		url = g_strdup_printf("https://" GROUPME_API_SERVER "/groups/%" G_GUINT64_FORMAT "/messages?", room_id);
+	}
+
 	postdata = json_object_to_string(data);
 
 	groupme_fetch_url(da, url, postdata, NULL, NULL);
 
 	g_free(url);
 	g_free(postdata);
+	g_free(rid);
 	json_object_unref(data);
 
 	return 1;
@@ -4478,7 +4491,7 @@ groupme_chat_send(PurpleConnection *pc, gint id,
 	g_return_val_if_fail(room_id_ptr, -1);
 	guint64 room_id = *room_id_ptr;
 
-	ret = groupme_conversation_send_message(da, room_id, message);
+	ret = groupme_conversation_send_message(da, room_id, message, FALSE);
 
 	if (ret > 0) {
 		purple_serv_got_chat_in(pc, groupme_chat_hash(room_id), da->self_username, PURPLE_MESSAGE_SEND, message, time(NULL));
@@ -4486,39 +4499,6 @@ groupme_chat_send(PurpleConnection *pc, gint id,
 	}
 
 	return ret;
-}
-
-static void
-groupme_created_direct_message_send(GroupMeAccount *da, JsonNode *node, gpointer user_data)
-{
-	PurpleMessage *msg = user_data;
-	JsonObject *result;
-	const gchar *who = purple_message_get_recipient(msg);
-	const gchar *message;
-	const gchar *room_id;
-	PurpleBuddy *buddy;
-
-	if (node == NULL) {
-		purple_conversation_present_error(who, da->account, _("Could not create conversation"));
-		purple_message_destroy(msg);
-		return;
-	}
-
-	result = json_node_get_object(node);
-	message = purple_message_get_contents(msg);
-	room_id = json_object_get_string_member(result, "id");
-	buddy = purple_blist_find_buddy(da->account, who);
-
-	if (room_id != NULL && who != NULL) {
-		g_hash_table_replace(da->one_to_ones, g_strdup(room_id), g_strdup(who));
-		g_hash_table_replace(da->one_to_ones_rev, g_strdup(who), g_strdup(room_id));
-	}
-
-	if (buddy != NULL) {
-		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", room_id);
-	}
-
-	groupme_conversation_send_message(da, to_int(room_id), message);
 }
 
 static int
@@ -4558,12 +4538,13 @@ groupme_send_im(PurpleConnection *pc,
 
 		room_id_i = user->id;
 	} else {
+		printf("Cache hit\n");
 		room_id_i = to_int(room_id);
 	}
 
 	printf("Got ID: %d\n", room_id_i);
-	return 1;
-	//return groupme_conversation_send_message(da, to_int(room_id), message);
+
+	return groupme_conversation_send_message(da, room_id_i, message, TRUE);
 }
 
 static void
