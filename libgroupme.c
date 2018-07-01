@@ -1381,74 +1381,6 @@ groupme_roomlist_get_list(PurpleConnection *pc)
 	return roomlist;
 }
 
-void
-groupme_set_status(PurpleAccount *account, PurpleStatus *status)
-{
-	PurpleConnection *pc = purple_account_get_connection(account);
-	GroupMeAccount *ya = purple_connection_get_protocol_data(pc);
-	const gchar *status_id = purple_status_get_id(status);
-	gchar *postdata;
-
-	JsonObject *obj = json_object_new();
-	JsonObject *data = json_object_new();
-
-	if (g_str_has_prefix(status_id, "set-")) {
-		status_id = &status_id[4];
-	}
-
-	json_object_set_int_member(obj, "op", 3);
-	json_object_set_string_member(data, "status", status_id);
-	json_object_set_int_member(data, "since", 0);
-
-	if (purple_account_get_bool(account, "use-status-as-game", FALSE)) {
-		JsonObject *game = json_object_new();
-		const gchar *message = purple_status_get_attr_string(status, "message");
-
-		json_object_set_int_member(game, "type", 0); /* 0 = Playing, 1 = Streaming */
-		json_object_set_string_member(game, "name", message);
-		json_object_set_object_member(data, "game", game);
-	} else {
-		json_object_set_null_member(data, "game");
-	}
-
-	json_object_set_boolean_member(data, "afk", FALSE);
-	json_object_set_object_member(obj, "d", data);
-
-	groupme_socket_write_json(ya, obj);
-
-	data = json_object_new();
-	json_object_set_string_member(data, "status", status_id);
-	postdata = json_object_to_string(data);
-
-	groupme_fetch_url_with_method(ya, "PATCH", "https://" GROUPME_API_SERVER "/api/v6/users/@me/settings", postdata, NULL, NULL);
-
-	g_free(postdata);
-	json_object_unref(data);
-}
-
-void
-groupme_set_idle(PurpleConnection *pc, int idle_time)
-{
-	GroupMeAccount *ya = purple_connection_get_protocol_data(pc);
-	JsonObject *obj = json_object_new();
-	JsonObject *data = json_object_new();
-	const gchar *status = "idle";
-	gint64 since = (time(NULL) - idle_time) * 1000;
-
-	if (idle_time < 20) {
-		status = "online";
-		since = 0;
-	}
-
-	json_object_set_int_member(obj, "op", 3);
-	json_object_set_string_member(data, "status", status);
-	json_object_set_int_member(data, "since", since);
-	json_object_set_boolean_member(data, "afk", idle_time >= 20);
-	json_object_set_object_member(obj, "d", data);
-
-	groupme_socket_write_json(ya, obj);
-}
-
 static void
 groupme_restart_channel(GroupMeAccount *da)
 {
@@ -3296,8 +3228,6 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->status_text = groupme_status_text;
 	prpl_info->tooltip_text = groupme_tooltip_text;
 	prpl_info->list_icon = groupme_list_icon;
-	prpl_info->set_status = groupme_set_status;
-	prpl_info->set_idle = groupme_set_idle;
 	prpl_info->status_types = groupme_status_types;
 	prpl_info->chat_info = groupme_chat_info;
 	prpl_info->chat_info_defaults = groupme_chat_info_defaults;
@@ -3417,8 +3347,6 @@ groupme_protocol_server_iface_init(PurpleProtocolServerIface *prpl_info)
 {
 	prpl_info->add_buddy = groupme_add_buddy;
 	prpl_info->remove_buddy = groupme_buddy_remove;
-	prpl_info->set_status = groupme_set_status;
-	prpl_info->set_idle = groupme_set_idle;
 	prpl_info->group_buddy = groupme_fake_group_buddy;
 	prpl_info->rename_group = groupme_fake_group_rename;
 	prpl_info->get_info = groupme_get_info;
