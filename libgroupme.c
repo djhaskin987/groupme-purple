@@ -131,7 +131,7 @@ typedef struct {
 	guint64 id;
 	gchar *nick;
 	gchar *joined_at;
-	GArray *roles; /* list of ids */
+	gboolean is_op;
 } GroupMeGuildMembership;
 
 typedef struct {
@@ -235,6 +235,8 @@ groupme_new_user(JsonObject *json)
 	user->id = to_int(json_object_get_string_member(json, "user_id"));
 	user->name = g_strdup(json_object_get_string_member(json, "nickname"));
 
+	user->guild_memberships = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild_membership);
+
 	return user;
 }
 
@@ -273,10 +275,23 @@ groupme_new_guild_membership(guint64 id, JsonObject *json)
 	GroupMeGuildMembership *guild_membership = g_new0(GroupMeGuildMembership, 1);
 
 	guild_membership->id = id;
-	guild_membership->nick = g_strdup(json_object_get_string_member(json, "nick"));
-	guild_membership->joined_at = g_strdup(json_object_get_string_member(json, "joined_at"));
+	guild_membership->nick = g_strdup(json_object_get_string_member(json, "nickname"));
 
-	guild_membership->roles = g_array_new(TRUE, TRUE, sizeof(guint64));
+	/* Search for op roles */
+	JsonArray *roles = json_object_get_array_member(json, "roles");
+
+	gint i, len = json_array_get_length(roles);
+	guild_membership->is_op = FALSE;
+
+	for (i = len - 1; i >= 0; i--) {
+		const gchar *role = json_array_get_string_element(roles, i);
+
+		if ((g_strcmp0(role, "admin") == 0) || (g_strcmp0(role, "op") == 0)) {
+			printf("Opping %s\n", guild_membership->nick);
+			guild_membership->is_op = TRUE;
+		}
+	}
+
 
 	return guild_membership;
 }
@@ -310,7 +325,6 @@ groupme_free_guild_membership(gpointer data)
 	g_free(guild_membership->nick);
 	g_free(guild_membership->joined_at);
 
-	g_array_unref(guild_membership->roles);
 	g_free(guild_membership);
 }
 
@@ -686,32 +700,17 @@ groupme_get_user_flags(GroupMeAccount *da, GroupMeGuild *guild, GroupMeUser *use
 	}
 
 	guint64 gid = guild->id;
+	printf("Got gid %d\n", gid);
 	GroupMeGuildMembership *guild_membership = g_hash_table_lookup_int64(user->guild_memberships, gid);
+	printf("Membership: %p\n", guild_membership);
 	PurpleChatUserFlags best_flag = user->bot ? PURPLE_CHAT_USER_VOICE : PURPLE_CHAT_USER_NONE;
 
 	if (guild_membership == NULL) {
 		return best_flag;
 	}
 
-	for (guint i = 0; i < guild_membership->roles->len; i++) {
-		guint64 role_id = g_array_index(guild_membership->roles, guint64, i);
-		GroupMeGuildRole *role = g_hash_table_lookup_int64(guild->roles, role_id);
-		PurpleChatUserFlags this_flag = PURPLE_CHAT_USER_NONE;
-
-		if (role != NULL) {
-#if 0
-			if (role->permissions & 0x8) { /* Admin */
-				this_flag = PURPLE_CHAT_USER_OP;
-			} else if (role->permissions & (0x2 | 0x4)) { /* Ban/kick */
-				this_flag = PURPLE_CHAT_USER_HALFOP;
-			}
-#endif
-		}
-
-		if (this_flag > best_flag) {
-			best_flag = this_flag;
-		}
-	}
+	if (guild_membership->is_op)
+		return PURPLE_CHAT_USER_OP;
 
 	return best_flag;
 }
@@ -1714,13 +1713,6 @@ groupme_process_dispatch(GroupMeAccount *da, const gchar *type, JsonObject *data
 			g_array_append_val(guild->members, u->id);
 
 			g_free(groupme_alloc_nickname(u, guild, membership->nick));
-
-			JsonArray *roles = json_object_get_array_member(member, "roles");
-
-			for (int k = json_array_get_length(roles) - 1; k >= 0; k--) {
-				guint64 role = to_int(json_array_get_string_element(roles, k));
-				g_array_append_val(membership->roles, role);
-			}
 		}
 
 		/* Update online users first */
@@ -2213,7 +2205,11 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
 
 		GroupMeUser *u = groupme_upsert_user(da->new_users, member);
 		g_array_append_val(g->members, u->id);
+
+		GroupMeGuildMembership *membership = groupme_new_guild_membership(g->id, member);
+		g_hash_table_replace_int64(u->guild_memberships, g->id, membership);
 	}
+	printf("Populating %d\n", g->id);
 }
 
 static void
@@ -3260,9 +3256,12 @@ groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present)
 	for (int j = channel->members->len - 1; j >= 0; j--) {
 		int uid = g_array_index(channel->members, guint64, j);
 		GroupMeUser *u = groupme_get_user(da, uid);
+		printf("User %s\n", u->name);
+		printf("Memberships %p\n", u->guild_memberships);
+		PurpleChatUserFlags cbflags = groupme_get_user_flags(da, channel, u);
 
 		users = g_list_prepend(users, g_strdup(u->name));
-		flags = g_list_prepend(flags, PURPLE_CHAT_USER_NONE);
+		flags = g_list_prepend(flags, GINT_TO_POINTER(cbflags));
 	}
 
 	purple_chat_conversation_clear_users(chatconv);
@@ -3753,13 +3752,6 @@ groupme_got_info(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 			}
 
 			GString *role_str = g_string_new(name);
-
-			for (guint i = 0; i < membership->roles->len; i++) {
-				guint64 role_id = g_array_index(membership->roles, guint64, i);
-				GroupMeGuildRole *role = g_hash_table_lookup_int64(guild->roles, role_id);
-
-				g_string_append_printf(role_str, role->name);
-			}
 
 			purple_notify_user_info_add_pair_html(user_info, guild->name, g_string_free(role_str, FALSE));
 		}
