@@ -1254,35 +1254,6 @@ groupme_restart_channel(GroupMeAccount *da)
 	groupme_start_socket(da);
 }
 
-static void
-groupme_build_groups_from_blist(GroupMeAccount *ya)
-{
-	PurpleBlistNode *node;
-
-	for (node = purple_blist_get_root();
-		 node != NULL;
-		 node = purple_blist_node_next(node, TRUE)) {
-		if (PURPLE_IS_BUDDY(node)) {
-			const gchar *groupme_id;
-			const gchar *name;
-			PurpleBuddy *buddy = PURPLE_BUDDY(node);
-
-			if (purple_buddy_get_account(buddy) != ya->account) {
-				continue;
-			}
-
-			name = purple_buddy_get_name(buddy);
-			groupme_id = purple_blist_node_get_string(node, "groupme_id");
-
-			if (groupme_id != NULL) {
-				g_hash_table_replace(ya->one_to_ones, g_strdup(groupme_id), g_strdup(name));
-				g_hash_table_replace(ya->last_message_id_dm, g_strdup(groupme_id), g_strdup("0"));
-				g_hash_table_replace(ya->one_to_ones_rev, g_strdup(name), g_strdup(groupme_id));
-			}
-		}
-	}
-}
-
 static guint groupme_conv_send_typing(PurpleConversation *conv, PurpleIMTypingState state, GroupMeAccount *ya);
 static gulong chat_conversation_typing_signal = 0;
 static void groupme_mark_conv_seen(PurpleConversation *conv, PurpleConversationUpdateType type);
@@ -1477,8 +1448,6 @@ groupme_login(PurpleAccount *account)
 	/* TODO make these the roots of all groupme data */
 	da->new_users = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_user);
 	da->new_guilds = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild);
-
-	groupme_build_groups_from_blist(da);
 
 	purple_connection_set_state(pc, PURPLE_CONNECTION_CONNECTING);
 
