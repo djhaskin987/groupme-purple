@@ -1200,22 +1200,6 @@ groupme_normalise_room_name(const gchar *guild_name, const gchar *name)
 	return old_name;
 }
 
-static void
-groupme_roomlist_got_list(GroupMeAccount *da, GroupMeGuild *guild, PurpleRoomlist *roomlist, PurpleRoomlistRoom *category)
-{
-	PurpleRoomlistRoom *room;
-
-	gchar *channel_id = from_int(guild->id);
-
-	room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, guild->name, category);
-
-	purple_roomlist_room_add_field(roomlist, room, channel_id);
-	purple_roomlist_room_add_field(roomlist, room, guild->name);
-
-	purple_roomlist_room_add(roomlist, room);
-	g_free(channel_id);
-}
-
 static gchar *
 groupme_roomlist_serialize(PurpleRoomlistRoom *room)
 {
@@ -1238,24 +1222,24 @@ groupme_roomlist_get_list(PurpleConnection *pc)
 	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("ID"), "id", TRUE);
 	fields = g_list_append(fields, f);
 
-	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Name"), "name", FALSE);
-	fields = g_list_append(fields, f);
-
 	purple_roomlist_set_fields(roomlist, fields);
 	purple_roomlist_set_in_progress(roomlist, TRUE);
 
 	GHashTableIter iter;
 	gpointer key, guild;
 
-	PurpleRoomlistRoom *category = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_CATEGORY, "Rooms", NULL);
-	purple_roomlist_room_add_field(roomlist, category, (gpointer) "Rooms");
-	purple_roomlist_room_add(roomlist, category);
-
 	g_hash_table_iter_init(&iter, da->new_guilds);
 
 	while (g_hash_table_iter_next(&iter, &key, &guild)) {
-		printf("Iterating...\n");
-		groupme_roomlist_got_list(da, guild, roomlist, category);
+		GroupMeGuild *g = (GroupMeGuild *) guild;
+
+		PurpleRoomlistRoom *room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, g->name, NULL);
+		gchar *channel_id = from_int(g->id);
+		
+		purple_roomlist_room_add_field(roomlist, room, channel_id);
+		purple_roomlist_room_add(roomlist, room);
+
+		g_free(channel_id);
 	}
 
 	purple_roomlist_set_in_progress(roomlist, FALSE);
