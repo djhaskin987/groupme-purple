@@ -79,14 +79,6 @@ typedef enum {
 
 typedef struct {
 	guint64 id;
-	guint64 guild_id;
-	gchar *name;
-	gchar *topic;
-	guint64 last_message_id;
-} GroupMeChannel;
-
-typedef struct {
-	guint64 id;
 	gchar *name;
 	gchar *icon;
 	guint64 owner;
@@ -94,8 +86,6 @@ typedef struct {
 	GArray *members;		   /* list of member ids */
 	GHashTable *nicknames;	 /* id->nick? */
 	GHashTable *nicknames_rev; /* reverse */
-
-	GroupMeChannel *channel;
 } GroupMeGuild;
 
 typedef struct {
@@ -192,7 +182,6 @@ groupme_chat_hash(guint64 chat_id)
 }
 
 static void groupme_free_guild_membership(gpointer data);
-static void groupme_free_channel(gpointer data);
 
 /* creating */
 
@@ -223,19 +212,6 @@ groupme_new_guild(JsonObject *json)
 	guild->nicknames = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, g_free);
 	guild->nicknames_rev = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	return guild;
-}
-
-static GroupMeChannel *
-groupme_new_channel(JsonObject *json)
-{
-	GroupMeChannel *channel = g_new0(GroupMeChannel, 1);
-
-	channel->id = to_int(json_object_get_string_member(json, "id"));
-	channel->name = g_strdup(json_object_get_string_member(json, "name"));
-	channel->topic = g_strdup(json_object_get_string_member(json, "topic"));
-	channel->last_message_id = to_int(json_object_get_string_member(json, "last_message_id"));
-
-	return channel;
 }
 
 static GroupMeGuildMembership *
@@ -300,16 +276,6 @@ groupme_free_guild(gpointer data)
 	g_free(guild);
 }
 
-static void
-groupme_free_channel(gpointer data)
-{
-	GroupMeChannel *channel = data;
-	g_free(channel->name);
-	g_free(channel->topic);
-
-	g_free(channel);
-}
-
 static void groupme_start_socket(GroupMeAccount *ya);
 
 static void
@@ -353,15 +319,6 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 			groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, str, groupme_got_subscription, NULL);
 		}
 	}
-}
-
-static GroupMeChannel *
-groupme_add_channel(GroupMeGuild *guild, JsonObject *json, guint64 guild_id)
-{
-	GroupMeChannel *channel = groupme_new_channel(json);
-	channel->guild_id = guild_id;
-	guild->channel = channel;
-	return channel;
 }
 
 static GroupMeUser *
@@ -907,7 +864,7 @@ static void groupme_got_avatar(GroupMeAccount *da, JsonNode *node, gpointer user
 static void groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user);
 
 static const gchar *groupme_normalise_room_name(const gchar *guild_name, const gchar *name);
-static GroupMeChannel *groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present);
+static GroupMeGuild *groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present);
 
 static gchar *
 groupme_create_nickname(GroupMeUser *author, GroupMeGuild *guild)
@@ -2233,7 +2190,7 @@ groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_da
 	JsonObject *resp = json_object_get_object_member(container, "response");
 	JsonArray *messages = json_object_get_array_member(resp, "messages");
 
-	GroupMeChannel *channel = user_data;
+	GroupMeGuild *channel = user_data;
 	gint i, len = json_array_get_length(messages);
 	guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
 	guint64 rolling_last_message_id = 0;
@@ -2344,7 +2301,7 @@ groupme_set_room_last_id(GroupMeAccount *da, guint64 id, guint64 last_id)
 
 static void groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata);
 
-static GroupMeChannel *
+static GroupMeGuild *
 groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present)
 {
 	PurpleChatConversation *chatconv = NULL;
@@ -2414,7 +2371,7 @@ groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	guint64 id = to_int(g_hash_table_lookup(chatdata, "id"));
 	gchar *name = (gchar *) g_hash_table_lookup(chatdata, "name");
 
-	GroupMeChannel *channel = groupme_open_chat(da, id, name, TRUE);
+	GroupMeGuild *channel = groupme_open_chat(da, id, name, TRUE);
 
 	if (!channel) {
 		return;
