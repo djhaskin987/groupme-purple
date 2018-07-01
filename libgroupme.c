@@ -247,15 +247,6 @@ groupme_new_user(JsonObject *json)
 	user->id = to_int(json_object_get_string_member(json, "user_id"));
 	user->name = g_strdup(json_object_get_string_member(json, "nickname"));
 
-#if 0
-	user->discriminator = to_int(json_object_get_string_member(json, "discriminator"));
-	user->bot = json_object_get_boolean_member(json, "bot");
-	user->avatar = g_strdup(json_object_get_string_member(json, "avatar"));
-
-	user->guild_memberships = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild_membership);
-	user->status = user->bot ? USER_ONLINE : USER_OFFLINE; /* Is offline the best assumption on a new user? */
-#endif
-
 	return user;
 }
 
@@ -267,31 +258,6 @@ groupme_new_guild(JsonObject *json)
 	guild->id = to_int(json_object_get_string_member(json, "id"));
 	guild->name = g_strdup(json_object_get_string_member(json, "name"));
 	guild->members = g_array_new(TRUE, TRUE, sizeof(guint64));
-#if 0
-	guild->icon = g_strdup(json_object_get_string_member(json, "icon"));
-	guild->owner = to_int(json_object_get_string_member(json, "owner_id"));
-
-	guild->roles = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild_role);
-	guild->members = g_array_new(TRUE, TRUE, sizeof(guint64));
-	guild->nicknames = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, g_free);
-	guild->nicknames_rev = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-
-	guild->channels = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_channel);
-	guild->afk_timeout = json_object_get_int_member(json, "afk_timeout");
-	guild->afk_voice_channel = g_strdup(json_object_get_string_member(json, "afk_channel_id"));
-
-	guild->emojis = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-
-	JsonArray *emojis = json_object_get_array_member(json, "emojis");
-
-	for (int i = json_array_get_length(emojis) - 1; i >= 0; i--) {
-		JsonObject *emoji = json_array_get_object_element(emojis, i);
-
-		gchar *id = g_strdup(json_object_get_string_member(emoji, "id"));
-		gchar *name = g_strdup(json_object_get_string_member(emoji, "name"));
-		g_hash_table_replace(guild->emojis, name, id);
-	}
-#endif
 
 	return guild;
 }
@@ -1701,10 +1667,6 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 	time_t timestamp = purple_str_to_time(timestamp_str, FALSE, NULL, NULL, NULL);
 
 	JsonArray *attachments = json_object_get_array_member(data, "attachments");
-#if 0
-	JsonArray *mentions = json_object_get_array_member(data, "mentions");
-	JsonArray *mention_roles = json_object_get_array_member(data, "mention_roles");
-#endif
 
 	PurpleMessageFlags flags;
 	gchar *tmp;
@@ -1719,74 +1681,6 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 	} else {
 		flags = PURPLE_MESSAGE_RECV;
 	}
-
-#if 0
-	if (mentions) {
-		for (i = json_array_get_length(mentions) - 1; i >= 0; i--) {
-			JsonObject *user = json_array_get_object_element(mentions, i);
-			guint64 id = to_int(json_object_get_string_member(user, "id"));
-
-			if (id == da->self_user_id) {
-				flags |= PURPLE_MESSAGE_NICK;
-			}
-		}
-	}
-
-	if (mention_roles && guild) {
-		GroupMeUser *self = groupme_get_user(da, da->self_user_id);
-		if (self) {
-			GroupMeGuildMembership *membership = g_hash_table_lookup_int64(self->guild_memberships, guild->id);
-
-			for (i = json_array_get_length(mention_roles) - 1; i >= 0; i--) {
-				guint64 id = to_int(json_array_get_string_element(mention_roles, i));
-
-				for (guint i = 0; i < membership->roles->len; i++) {
-					guint64 role_id = g_array_index(membership->roles, guint64, i);
-
-					if (role_id == id) {
-						flags |= PURPLE_MESSAGE_NICK;
-						break;
-					}
-				}
-			}
-		}
-	}
-
-	if (mentions || mention_roles) {
-		escaped_content = groupme_replace_mentions_bare(da, guild, escaped_content);
-	}
-
-	if (json_object_get_boolean_member(data, "mention_everyone")) {
-		flags |= PURPLE_MESSAGE_NICK;
-	}
-
-	/* Replace <:emoji:id> with emojis */
-	tmp = g_regex_replace_eval(emoji_regex, escaped_content, -1, 0, 0, groupme_replace_emoji, da, NULL);
-
-	if (tmp != NULL) {
-		g_free(escaped_content);
-		escaped_content = tmp;
-	}
-
-	/* translate GroupMe-formatted actions into /me syntax */
-	tmp = g_regex_replace(action_star_regex, escaped_content, -1, 0, "/me \\1", 0, NULL);
-
-	if (tmp != NULL) {
-		g_free(escaped_content);
-		escaped_content = tmp;
-	}
-
-	tmp = groupme_convert_markdown(escaped_content);
-	g_free(escaped_content);
-	escaped_content = tmp;
-
-	/* Add prefix for edited messages */
-	if (edited) {
-		tmp = g_strconcat("EDIT: ", escaped_content, NULL);
-		g_free(escaped_content);
-		escaped_content = tmp;
-	}
-#endif
 
 	if (is_dm) {
 		/* private message */
@@ -1842,30 +1736,10 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 			}
 		}
 	} else {
-		/* TODO: Direct messages */
-
 		/* Open the buffer if it's not already */
-#if 0
-		int head_count = guild ? guild->members->len : 0;
-		gboolean mentioned = flags & PURPLE_MESSAGE_NICK;
-
-		if (mentioned || (head_count < purple_account_get_int(da->account, "large-channel-count", 20))) {
-			groupme_open_chat(da, channel_id, NULL, mentioned);
-		}
-#endif
 		groupme_open_chat(da, channel, NULL, FALSE);
 
-#if 0
-		gchar *name = NULL;
-		if (json_object_has_member(data, "webhook_id")) {
-			name = g_strdup(json_object_get_string_member(author_obj, "username"));
-		} else {
-			GroupMeUser *author = groupme_upsert_user(da->new_users, author_obj);
-			name = groupme_create_nickname(author, guild);
-		}
-#endif
 		gchar *name = json_object_get_string_member(data, "name");
-		printf("<%s> %s\n", name, content);
 
 		if (content && *content) {
 			purple_serv_got_chat_in(da->pc, groupme_chat_hash(channel), name, flags, content, timestamp);
@@ -1881,13 +1755,7 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 				}
 			}
 		}
-
-		//g_free(name);
 	}
-
-#if 0
-	g_free(escaped_content);
-#endif
 
 	return 1;
 }
@@ -2782,29 +2650,6 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
 		GroupMeUser *u = groupme_upsert_user(da->new_users, member);
 		g_array_append_val(g->members, u->id);
 	}
-
-#if 0
-	JsonArray *channels = json_object_get_array_member(guild, "channels");
-	JsonArray *roles = json_object_get_array_member(guild, "roles");
-
-	for (int j = json_array_get_length(roles) - 1; j >= 0; j--) {
-		JsonObject *role = json_array_get_object_element(roles, j);
-		groupme_add_guild_role(g, role);
-	}
-
-	for (int j = json_array_get_length(channels) - 1; j >= 0; j--) {
-		JsonObject *channel = json_array_get_object_element(channels, j);
-
-		GroupMeChannel *c = groupme_add_channel(g, channel, g->id);
-
-		JsonArray *permission_overrides = json_object_get_array_member(channel, "permission_overwrites");
-
-		for (int k = json_array_get_length(permission_overrides) - 1; k >= 0; k--) {
-			JsonObject *permission_override = json_array_get_object_element(permission_overrides, k);
-			groupme_add_permission_override(c, permission_override);
-		}
-	}
-#endif
 }
 
 static void
@@ -2968,13 +2813,6 @@ groupme_login(PurpleAccount *account)
 	PurpleConnection *pc = purple_account_get_connection(account);
 	PurpleConnectionFlags pc_flags;
 
-#if 0
-	if (!strchr(purple_account_get_username(account), '@')) {
-		purple_connection_error(pc, PURPLE_CONNECTION_ERROR_INVALID_USERNAME, _("Username needs to be an email address"));
-		return;
-	}
-#endif
-
 	pc_flags = purple_connection_get_flags(pc);
 	pc_flags |= PURPLE_CONNECTION_FLAG_NO_FONTSIZE;
 	pc_flags |= PURPLE_CONNECTION_FLAG_NO_BGCOLOR;
@@ -3008,25 +2846,6 @@ groupme_login(PurpleAccount *account)
 
 	purple_connection_set_state(pc, PURPLE_CONNECTION_CONNECTING);
 
-#if 0
-	da->token = g_strdup(purple_account_get_string(account, "token", NULL));
-
-	if (da->token) {
-		groupme_start_socket(da);
-	} else {
-		JsonObject *data = json_object_new();
-		gchar *str;
-
-		json_object_set_string_member(data, "email", purple_account_get_username(account));
-		json_object_set_string_member(data, "password", purple_connection_get_password(da->pc));
-
-		str = json_object_to_string(data);
-		groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/api/v6/auth/login", str, groupme_login_response, NULL);
-
-		g_free(str);
-		json_object_unref(data);
-	}
-#endif
 	const gchar *dev_token = purple_connection_get_password(da->pc);
 	da->token = dev_token;
 
