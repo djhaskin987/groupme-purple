@@ -315,8 +315,6 @@ static void groupme_start_socket(GroupMeAccount *ya);
 static void
 groupme_got_subscription(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
-	printf("Subscribed! TODO: Check\n");
-
 	/* We're good to go */
 	groupme_start_socket(da);
 }
@@ -339,14 +337,12 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 		JsonObject *response = json_array_get_object_element(responseA, 0);
 		
 		if (json_object_has_member(response, "successful")) {
-			printf("Handshake success\n");
 			const gchar *clientId = json_object_get_string_member(response, "clientId");
 			da->client_id = g_strdup(clientId);
-			printf("Client ID: %s\n", clientId);
 
 			/* Subscribe now */
 			const gchar *str = g_strdup_printf(
-					"{\"channel\": \"/meta/subscribe\", \"clientId\": \"%s\", \"subscription\": \"/user/%d\", \"ext\": {\"timestamp\": %d, \"access_token\": \"%s\"}, \"id\": 2}",
+					"{\"channel\": \"/meta/subscribe\", \"clientId\": \"%s\", \"subscription\": \"/user/%" G_GUINT64_FORMAT "\", \"ext\": {\"timestamp\": %" G_GUINT64_FORMAT ", \"access_token\": \"%s\"}, \"id\": 2}",
 					clientId,
 					da->self_user_id,
 					time(NULL),
@@ -554,9 +550,7 @@ groupme_get_user_flags(GroupMeAccount *da, GroupMeGuild *guild, GroupMeUser *use
 	}
 
 	guint64 gid = guild->id;
-	printf("Got gid %d\n", gid);
 	GroupMeGuildMembership *guild_membership = g_hash_table_lookup_int64(user->guild_memberships, gid);
-	printf("Membership: %p\n", guild_membership);
 	PurpleChatUserFlags best_flag = user->bot ? PURPLE_CHAT_USER_VOICE : PURPLE_CHAT_USER_NONE;
 
 	if (guild_membership == NULL) {
@@ -897,7 +891,6 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
 			/* Sometimes we receive our own messages, account for that */
 			int channel = sid == da->self_user_id ? rid : sid;
-			printf("%d, %d\n", sid, rid);
 
 			groupme_process_message(da, channel, subj, TRUE);
 		} else {
@@ -1035,7 +1028,6 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 
 			gchar *username = groupme_get_user(da, channel)->name;
 			imconv = purple_conversations_find_im_with_account(username, da->account);
-			printf("USername: %s\n", username);
 
 			if (imconv == NULL) {
 				imconv = purple_im_conversation_new(da->account, username);
@@ -1582,7 +1574,6 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
 {
 	GroupMeGuild *g = groupme_upsert_guild(da->new_guilds, guild);
 	gchar *name = json_object_get_string_member(guild, "name");
-	printf("Chat w/ name: %s\n", name);
 
 	/* Add chat to blist */
 	PurpleGroup *group = groupme_get_or_create_default_group();
@@ -1600,7 +1591,6 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
 		GroupMeGuildMembership *membership = groupme_new_guild_membership(g->id, member);
 		g_hash_table_replace_int64(u->guild_memberships, g->id, membership);
 	}
-	printf("Populating %d\n", g->id);
 }
 
 static void
@@ -1612,7 +1602,6 @@ groupme_got_guilds(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	JsonArray *guild_ids = json_array_new();
 	JsonObject *obj;
 
-	printf("Got groups\n");
 	for (int i = len - 1; i >= 0; i--) {
 		JsonObject *guild = json_array_get_object_element(guilds, i);
 		groupme_populate_guild(da, guild);
@@ -1645,9 +1634,7 @@ groupme_got_self(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	da->self_username = g_strdup(json_object_get_string_member(resp, "name"));
 
 	/* Now that we have the user ID, we can start the websocket handshake */
-	printf("User ID %X (%s)\n", da->self_user_id, da->self_username);
 	{
-		printf("Fetching handshake\n");
 		const gchar *str = "{\"channel\": \"/meta/handshake\", \"version\": \"1.0\", \"supportedConnectionTypes\": [\"" GROUPME_PUSH_TYPE "\"], \"id\": 1}";
 		groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, str, groupme_got_handshake, NULL);
 	}
@@ -1781,8 +1768,6 @@ groupme_login(PurpleAccount *account)
 	/* XXX: Authenticate good */
 	purple_connection_set_state(da->pc, PURPLE_CONNECTION_CONNECTED);
 	
-	printf("Dev token: %s\n", dev_token);
-
 	if (!chat_conversation_typing_signal) {
 		chat_conversation_typing_signal = purple_signal_connect(purple_conversations_get_handle(), "chat-conversation-typing", purple_connection_get_protocol(pc), PURPLE_CALLBACK(groupme_conv_send_typing), NULL);
 	}
@@ -2162,7 +2147,6 @@ groupme_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInp
 
 	g_free(websocket_header);
 
-	printf("Websocket headered\n");
 	groupme_init_push(da);
 }
 
@@ -2185,7 +2169,6 @@ static void
 groupme_start_socket(GroupMeAccount *da)
 {
 #ifdef USE_LONG_POLL
-	printf("(Not starting websocket bc long poll");
 	groupme_init_push(da);
 	return;
 #endif
@@ -2425,9 +2408,6 @@ groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_da
 	guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
 	guint64 rolling_last_message_id = 0;
 
-	printf("len: %d\n", len);
-	printf("reported: %d\n", json_object_get_int_member(resp, "count"));
-
 	/* latest are first */
 	for (i = len - 1; i >= 0; i--) {
 		JsonObject *message = json_array_get_object_element(messages, i);
@@ -2468,7 +2448,6 @@ groupme_got_history_static(GroupMeAccount *da, JsonNode *node, gpointer user_dat
 	for (i = len - 1; i >= 0; i--) {
 		JsonObject *message = json_array_get_object_element(messages, i);
 
-		printf("XXX\n");
 		//groupme_process_message(da, message, FALSE);
 	}
 }
@@ -2577,8 +2556,6 @@ groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present)
 	for (int j = channel->members->len - 1; j >= 0; j--) {
 		int uid = g_array_index(channel->members, guint64, j);
 		GroupMeUser *u = groupme_get_user(da, uid);
-		printf("User %s\n", u->name);
-		printf("Memberships %p\n", u->guild_memberships);
 		PurpleChatUserFlags cbflags = groupme_get_user_flags(da, channel, u);
 
 		users = g_list_prepend(users, g_strdup(u->name));
@@ -2606,8 +2583,6 @@ groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 
 	guint64 id = to_int(g_hash_table_lookup(chatdata, "id"));
 	gchar *name = (gchar *) g_hash_table_lookup(chatdata, "name");
-
-	printf("Joining %s\n", name);
 
 	GroupMeChannel *channel = groupme_open_chat(da, id, name, TRUE);
 
@@ -2860,7 +2835,6 @@ groupme_send_im(PurpleConnection *pc,
 #endif
 
 	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
-	printf("%s: %s\n", who, message);
 
 	gchar *room_id = g_hash_table_lookup(da->one_to_ones_rev, who);
 	int room_id_i;
@@ -2884,11 +2858,8 @@ groupme_send_im(PurpleConnection *pc,
 
 		room_id_i = user->id;
 	} else {
-		printf("Cache hit\n");
 		room_id_i = to_int(room_id);
 	}
-
-	printf("Got ID: %d\n", room_id_i);
 
 	return groupme_conversation_send_message(da, room_id_i, message, TRUE);
 }
