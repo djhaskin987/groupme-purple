@@ -114,7 +114,6 @@ typedef struct {
 	gchar *icon;
 	guint64 owner;
 
-	GHashTable *roles;
 	GArray *members;		   /* list of member ids */
 	GHashTable *nicknames;	 /* id->nick? */
 	GHashTable *nicknames_rev; /* reverse */
@@ -222,7 +221,6 @@ groupme_chat_hash(guint64 chat_id)
 }
 
 static void groupme_free_guild_membership(gpointer data);
-static void groupme_free_guild_role(gpointer data);
 static void groupme_free_channel(gpointer data);
 
 /* creating */
@@ -287,8 +285,8 @@ groupme_new_guild_membership(guint64 id, JsonObject *json)
 		const gchar *role = json_array_get_string_element(roles, i);
 
 		if ((g_strcmp0(role, "admin") == 0) || (g_strcmp0(role, "op") == 0)) {
-			printf("Opping %s\n", guild_membership->nick);
 			guild_membership->is_op = TRUE;
+			break;
 		}
 	}
 
@@ -296,27 +294,7 @@ groupme_new_guild_membership(guint64 id, JsonObject *json)
 	return guild_membership;
 }
 
-static GroupMeGuildRole *
-groupme_new_guild_role(JsonObject *json)
-{
-	GroupMeGuildRole *guild_role = g_new0(GroupMeGuildRole, 1);
-
-	guild_role->id = to_int(json_object_get_string_member(json, "id"));
-	guild_role->name = g_strdup(json_object_get_string_member(json, "name"));
-	guild_role->color = json_object_get_int_member(json, "color");
-
-	return guild_role;
-}
-
 /* freeing */
-
-static void
-groupme_free_guild_role(gpointer data)
-{
-	GroupMeGuildRole *guild_role = data;
-	g_free(guild_role->name);
-	g_free(guild_role);
-}
 
 static void
 groupme_free_guild_membership(gpointer data)
@@ -347,7 +325,6 @@ groupme_free_guild(gpointer data)
 	g_free(guild->name);
 	g_free(guild->icon);
 
-	g_hash_table_unref(guild->roles);
 	g_array_unref(guild->members);
 	g_hash_table_unref(guild->nicknames);
 	g_hash_table_unref(guild->nicknames_rev);
@@ -453,28 +430,6 @@ groupme_add_channel(GroupMeGuild *guild, JsonObject *json, guint64 guild_id)
 	g_hash_table_replace_int64(guild->channels, channel->id, channel);
 	guild->channel = channel;
 	return channel;
-}
-
-static GroupMeGuildRole *
-groupme_add_guild_role(GroupMeGuild *guild, JsonObject *json)
-{
-	GroupMeGuildRole *role = groupme_new_guild_role(json);
-	g_hash_table_replace_int64(guild->roles, role->id, role);
-	return role;
-}
-
-void
-groupme_dump_int64_hashtable_keys(GHashTable *hash_table)
-{
-	GHashTableIter iter;
-	guint64 *key;
-	gpointer value;
-
-	g_hash_table_iter_init(&iter, hash_table);
-
-	while (g_hash_table_iter_next(&iter, (gpointer *) &key, &value)) {
-		purple_debug_info("groupme", "%" G_GUINT64_FORMAT, *key);
-	}
 }
 
 static GroupMeUser *
@@ -713,18 +668,6 @@ groupme_get_user_flags(GroupMeAccount *da, GroupMeGuild *guild, GroupMeUser *use
 		return PURPLE_CHAT_USER_OP;
 
 	return best_flag;
-}
-
-static gchar *
-groupme_combine_username(const gchar *username, const gchar *discriminator)
-{
-	g_return_val_if_fail(username != NULL, NULL);
-	
-	if (discriminator == NULL) {
-		discriminator = "0000";
-	}
-	
-	return g_strconcat(username, "#", discriminator, NULL);
 }
 
 #if PURPLE_VERSION_CHECK(3, 0, 0)
@@ -1088,31 +1031,11 @@ groupme_init_push(GroupMeAccount *da)
 	g_free(id);
 }
 
-static gboolean
-groupme_send_heartbeat(gpointer userdata)
-{
-	GroupMeAccount *da = userdata;
-	JsonObject *obj = json_object_new();
-
-	json_object_set_int_member(obj, "op", 1);
-	json_object_set_int_member(obj, "d", da->seq);
-
-	groupme_socket_write_json(da, obj);
-
-	json_object_unref(obj);
-
-	return TRUE;
-}
-
 void groupme_handle_add_new_user(GroupMeAccount *ya, JsonObject *obj);
 
 PurpleGroup *groupme_get_or_create_default_group();
 
 static void groupme_create_relationship(GroupMeAccount *da, JsonObject *json);
-static void groupme_got_relationships(GroupMeAccount *da, JsonNode *node, gpointer user_data);
-static void groupme_got_private_channels(GroupMeAccount *da, JsonNode *node, gpointer user_data);
-static void groupme_got_presences(GroupMeAccount *da, JsonNode *node, gpointer user_data);
-static void groupme_got_read_states(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_got_history_static(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_populate_guild(GroupMeAccount *da, JsonObject *guild);
@@ -1122,32 +1045,6 @@ static void groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user);
 
 static const gchar *groupme_normalise_room_name(const gchar *guild_name, const gchar *name);
 static GroupMeChannel *groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present);
-
-static guint64
-groupme_find_role_by_name(GroupMeGuild *guild, const gchar *name)
-{
-	if (!guild) {
-		return 0;
-	}
-	
-	if (purple_strequal(name, "everyone")) {
-		return guild->id;
-	}
-
-	GHashTableIter iter;
-	gpointer key;
-	gpointer value;
-	g_hash_table_iter_init(&iter, guild->roles);
-
-	while (g_hash_table_iter_next(&iter, (gpointer *) &key, &value)) {
-		GroupMeGuildRole *role = value;
-		if (purple_strequal(role->name, name)) {
-			return role->id;
-		}
-	}
-
-	return 0;
-}
 
 static guint64
 groupme_find_channel_by_name(GroupMeGuild *guild, gchar *name)
@@ -1799,72 +1696,6 @@ groupme_create_relationship(GroupMeAccount *da, JsonObject *json)
 }
 
 static void
-groupme_got_relationships(GroupMeAccount *da, JsonNode *node, gpointer user_data)
-{
-	JsonArray *relationships = json_node_get_array(node);
-	guint len = json_array_get_length(relationships);
-
-	for (int i = len - 1; i >= 0; i--) {
-		groupme_create_relationship(da, json_array_get_object_element(relationships, i));
-	}
-}
-
-static void
-groupme_got_private_channels(GroupMeAccount *da, JsonNode *node, gpointer user_data)
-{
-	JsonArray *private_channels = json_node_get_array(node);
-	gint i;
-	guint len = json_array_get_length(private_channels);
-
-	for (i = len - 1; i >= 0; i--) {
-		JsonObject *channel = json_array_get_object_element(private_channels, i);
-		JsonArray *recipients = json_object_get_array_member(channel, "recipients");
-		const gchar *room_id = json_object_get_string_member(channel, "id");
-		const gchar *last_message_id = json_object_get_string_member(channel, "last_message_id");
-		gint64 room_type = json_object_get_int_member(channel, "type");
-
-		if (room_type == 1) {
-			/* One-to-one DM */
-			JsonObject *user = json_array_get_object_element(recipients, 0);
-			const gchar *username = json_object_get_string_member(user, "username");
-			const gchar *discriminator = json_object_get_string_member(user, "discriminator");
-			gchar *merged_username = groupme_combine_username(username, discriminator);
-
-			g_hash_table_replace(da->one_to_ones, g_strdup(room_id), g_strdup(merged_username));
-			g_hash_table_replace(da->one_to_ones_rev, g_strdup(merged_username), g_strdup(room_id));
-			g_hash_table_replace(da->last_message_id_dm, g_strdup(room_id), g_strdup(last_message_id));
-
-			g_free(merged_username);
-		} 
-	}
-}
-
-static void
-groupme_got_presences(GroupMeAccount *da, JsonNode *node, gpointer user_data)
-{
-	JsonArray *presences = json_node_get_array(node);
-	gint i;
-	guint len = json_array_get_length(presences);
-
-	for (i = len - 1; i >= 0; i--) {
-		/* TODO convert to user object */
-		JsonObject *presence = json_array_get_object_element(presences, i);
-		JsonObject *user = json_object_get_object_member(presence, "user");
-		const gchar *status = json_object_get_string_member(presence, "status");
-		const gchar *username = json_object_get_string_member(user, "username");
-		const gchar *discriminator = json_object_get_string_member(user, "discriminator");
-		JsonObject *game = json_object_get_object_member(presence, "game");
-		const gchar *game_name = json_object_get_string_member(game, "name");
-		gchar *merged_username = groupme_combine_username(username, discriminator);
-
-		purple_protocol_got_user_status(da->account, merged_username, status, "message", game_name, NULL);
-		purple_protocol_got_user_idle(da->account, merged_username, purple_strequal(status, "idle"), 0);
-
-		g_free(merged_username);
-	}
-}
-
-static void
 groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
 {
 	GroupMeGuild *g = groupme_upsert_guild(da->new_guilds, guild);
@@ -1917,35 +1748,6 @@ groupme_get_history(GroupMeAccount *da, const gchar *channel, const gchar *last,
 	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%s/messages?limit=%d&after=%s", channel, count ? count : 100, last);
 	groupme_fetch_url(da, url, NULL, count ? groupme_got_history_static : groupme_got_history_of_room, count ? NULL : groupme_get_channel_global(da, channel));
 	g_free(url);
-}
-
-static void
-groupme_got_read_states(GroupMeAccount *da, JsonNode *node, gpointer user_data)
-{
-	JsonArray *states = json_node_get_array(node);
-	guint len = json_array_get_length(states);
-
-	for (int i = len - 1; i >= 0; i--) {
-		JsonObject *state = json_array_get_object_element(states, i);
-
-		const gchar *channel = json_object_get_string_member(state, "id");
-		const gchar *last_id = json_object_get_string_member(state, "last_message_id");
-		guint mentions = json_object_get_int_member(state, "mention_count");
-
-		if (mentions) {
-			gboolean isDM = g_hash_table_contains(da->one_to_ones, channel);
-
-			if (isDM) {
-				groupme_get_history(da, channel, last_id, mentions * 2);
-			} else {
-				/* TODO: fetch channel history */
-				GroupMeChannel *dchannel = groupme_get_channel_global(da, channel);
-				if (dchannel != NULL) {
-					purple_debug_misc("groupme", "%d unhandled mentions in channel %s\n", mentions, dchannel->name);
-				}
-			}
-		}
-	}
 }
 
 static void
