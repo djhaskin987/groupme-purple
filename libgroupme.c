@@ -1772,7 +1772,7 @@ groupme_login(PurpleAccount *account)
 	purple_connection_set_state(pc, PURPLE_CONNECTION_CONNECTING);
 
 	const gchar *dev_token = purple_connection_get_password(da->pc);
-	da->token = dev_token;
+	da->token = g_strdup(dev_token);
 
 	/* Test the REST API */
 	groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
