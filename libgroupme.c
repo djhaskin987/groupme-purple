@@ -555,7 +555,7 @@ groupme_get_user_name(GroupMeAccount *da, int discriminator, gchar *name)
 	while (g_hash_table_iter_next(&iter, &key, &value)) {
 		GroupMeUser *user = value;
 
-		if (user->discriminator == discriminator && purple_strequal(user->name, name)) {
+		if (/*user->discriminator == discriminator && */purple_strequal(user->name, name)) {
 			return value;
 		}
 	}
@@ -4535,33 +4535,35 @@ groupme_send_im(PurpleConnection *pc,
 
 	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
 	printf("%s: %s\n", who, message);
-	return -1;
+
 	gchar *room_id = g_hash_table_lookup(da->one_to_ones_rev, who);
+	int room_id_i;
 
 	/* Create DM if there isn't one */
 	if (room_id == NULL) {
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
 		PurpleMessage *msg = purple_message_new_outgoing(who, message, flags);
 #endif
-		GroupMeUser *user = groupme_get_user_fullname(da, who);
-
-		if (user) {
-			JsonObject *data = json_object_new();
-			json_object_set_int_member(data, "recipient_id", user->id);
-			gchar *postdata = json_object_to_string(data);
-
-			groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/api/v6/users/@me/channels", postdata, groupme_created_direct_message_send, msg);
-
-			g_free(postdata);
-			json_object_unref(data);
-
+		GroupMeUser *user = groupme_get_user_name(da, 0, who);
+		
+		if (!user) {
+			purple_debug_error("groupme", "Bad user: %s\n", who);
 			return 1;
 		}
 
-		return -1;
+		
+		/* Cache it */
+		g_hash_table_replace(da->one_to_ones, from_int(user->id), g_strdup(who));
+		g_hash_table_replace(da->one_to_ones_rev, g_strdup(who), from_int(user->id));
+
+		room_id_i = user->id;
+	} else {
+		room_id_i = to_int(room_id);
 	}
 
-	return groupme_conversation_send_message(da, to_int(room_id), message);
+	printf("Got ID: %d\n", room_id_i);
+	return 1;
+	//return groupme_conversation_send_message(da, to_int(room_id), message);
 }
 
 static void
