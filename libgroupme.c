@@ -1246,7 +1246,7 @@ static void groupme_mark_room_messages_read(GroupMeAccount *ya, guint64 room_id)
 static void groupme_init_push(GroupMeAccount *da);
 
 static guint64
-groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean edited);
+groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean is_dm);
 
 static void
 groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
@@ -1269,13 +1269,23 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
 		JsonObject *subj = json_object_get_object_member(data, "subject");
 
-		const gchar *type = json_object_get_string_member(subj, "type");
+		const gchar *type = json_object_get_string_member(data, "type");
 
-		if (g_strcmp0(type, "line.create")) {
+		if (g_strcmp0(type, "line.create") == 0) {
 			/* Incoming message */
 
 			int gid = to_int(json_object_get_string_member(subj, "group_id"));
 			groupme_process_message(da, gid, subj, FALSE);
+		} else if (g_strcmp0(type, "direct_message.create") == 0) {
+			/* Direct message: either our sent message or theirs */
+			int sid = to_int(json_object_get_string_member(subj, "sender_id"));
+			int rid = to_int(json_object_get_string_member(subj, "recipient_id"));
+
+			/* Sometimes we receive our own messages, account for that */
+			int channel = sid == da->self_user_id ? rid : sid;
+			printf("%d, %d\n", sid, rid);
+
+			groupme_process_message(da, channel, subj, TRUE);
 		} else {
 			printf("Unknown type %s, check debug logs\n", type);
 		}
@@ -1773,8 +1783,9 @@ bail:
 }
 
 static guint64
-groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean edited)
+groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean is_dm)
 {
+	printf("Processing %d\n", channel);
 	const gchar *guid = json_object_get_string_member(data, "source_guid");
 	guint64 author_id = to_int(json_object_get_string_member(data, "sender_id"));
 
@@ -1793,8 +1804,10 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 	gint i;
 
 	/* Drop our own messages that were pinged back to us */
+#if 0
 	if ((author_id == da->self_user_id) && g_hash_table_remove(da->sent_message_ids, guid))
 		return;
+#endif
 
 #if 0
 	if (author_id == da->self_user_id) {
@@ -1873,50 +1886,48 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 	}
 #endif
 
-#if 0
-	if (g_hash_table_contains(da->one_to_ones, channel_id_s)) {
+	if (is_dm) {
 		/* private message */
 
 		if (author_id == da->self_user_id) {
-			if (!nonce || !g_hash_table_remove(da->sent_message_ids, nonce)) {
-				PurpleConversation *conv;
-				PurpleIMConversation *imconv;
-				PurpleMessage *msg;
+			PurpleConversation *conv;
+			PurpleIMConversation *imconv;
+			PurpleMessage *msg;
 
-				gchar *username = g_hash_table_lookup(da->one_to_ones, channel_id_s);
-				imconv = purple_conversations_find_im_with_account(username, da->account);
+			gchar *username = groupme_get_user(da, channel)->name;
+			imconv = purple_conversations_find_im_with_account(username, da->account);
+			printf("USername: %s\n", username);
 
-				if (imconv == NULL) {
-					imconv = purple_im_conversation_new(da->account, username);
-				}
+			if (imconv == NULL) {
+				imconv = purple_im_conversation_new(da->account, username);
+			}
 
-				conv = PURPLE_CONVERSATION(imconv);
+			conv = PURPLE_CONVERSATION(imconv);
 
-				if (escaped_content && *escaped_content) {
-					msg = purple_message_new_outgoing(username, escaped_content, flags);
+			if (content && *content) {
+				msg = purple_message_new_outgoing(username, content, flags);
+				purple_message_set_time(msg, timestamp);
+				purple_conversation_write_message(conv, msg);
+				purple_message_destroy(msg);
+			}
+
+			if (attachments) {
+				for (i = json_array_get_length(attachments) - 1; i >= 0; i--) {
+					JsonObject *attachment = json_array_get_object_element(attachments, i);
+					const gchar *url = json_object_get_string_member(attachment, "url");
+
+					msg = purple_message_new_outgoing(username, url, flags);
 					purple_message_set_time(msg, timestamp);
 					purple_conversation_write_message(conv, msg);
 					purple_message_destroy(msg);
 				}
-
-				if (attachments) {
-					for (i = json_array_get_length(attachments) - 1; i >= 0; i--) {
-						JsonObject *attachment = json_array_get_object_element(attachments, i);
-						const gchar *url = json_object_get_string_member(attachment, "url");
-
-						msg = purple_message_new_outgoing(username, url, flags);
-						purple_message_set_time(msg, timestamp);
-						purple_conversation_write_message(conv, msg);
-						purple_message_destroy(msg);
-					}
-				}
 			}
 		} else {
-			GroupMeUser *author = groupme_upsert_user(da->new_users, author_obj);
-			gchar *merged_username = groupme_create_fullname(author);
+			GroupMeUser *author = groupme_upsert_user(da->new_users, data);
+			gchar *merged_username = author->name;
 
-			if (escaped_content && *escaped_content) {
-				purple_serv_got_im(da->pc, merged_username, escaped_content, flags, timestamp);
+			if (content && *content) {
+				purple_serv_got_im(da->pc, merged_username, content, flags, timestamp);
 			}
 
 			if (attachments) {
@@ -1927,11 +1938,8 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 					purple_serv_got_im(da->pc, merged_username, url, flags, timestamp);
 				}
 			}
-
-			g_free(merged_username);
 		}
-	} else if (!nonce || !g_hash_table_remove(da->sent_message_ids, nonce)) {
-#endif
+	} else {
 		/* TODO: Direct messages */
 
 		/* Open the buffer if it's not already */
@@ -1973,9 +1981,9 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 		}
 
 		//g_free(name);
-#if 0
 	}
 
+#if 0
 	g_free(escaped_content);
 #endif
 
