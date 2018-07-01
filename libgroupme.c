@@ -355,34 +355,6 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	}
 }
 
-/* updating */
-
-static void
-groupme_update_status(GroupMeUser *user, JsonObject *json)
-{
-	json_object_get_string_member(json, "id");
-
-	if (json_object_has_member(json, "status")) {
-		const gchar *status = json_object_get_string_member(json, "status");
-
-		if (purple_strequal("online", status)) {
-			user->status = USER_ONLINE;
-		} else if (purple_strequal("idle", status)) {
-			user->status = USER_IDLE;
-		} else if (purple_strequal("dnd", status)) {
-			user->status = USER_DND;
-		} else {
-			user->status = USER_OFFLINE; /* All else fails probably offline */
-		}
-	}
-
-	if (json_object_has_member(json, "game")) {
-		const gchar *game = json_object_get_string_member(json_object_get_object_member(json, "game"), "name");
-		g_free(user->game);
-		user->game = g_strdup(game);
-	}
-}
-
 static GroupMeChannel *
 groupme_add_channel(GroupMeGuild *guild, JsonObject *json, guint64 guild_id)
 {
