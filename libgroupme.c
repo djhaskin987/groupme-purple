@@ -4281,6 +4281,9 @@ groupme_conv_send_typing(PurpleConversation *conv, PurpleIMTypingState state, Gr
 		ya = purple_connection_get_protocol_data(pc);
 	}
 
+	printf("Send typing\n");
+
+#if 0
 	guint64 *room_id_ptr = purple_conversation_get_data(conv, "id");
 	guint64 room_id = 0;
 
@@ -4293,6 +4296,7 @@ groupme_conv_send_typing(PurpleConversation *conv, PurpleIMTypingState state, Gr
 	url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/typing", room_id);
 	groupme_fetch_url(ya, url, "", NULL, NULL);
 	g_free(url);
+#endif
 
 	return 10;
 }
@@ -4530,6 +4534,8 @@ groupme_send_im(PurpleConnection *pc,
 #endif
 
 	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
+	printf("%s: %s\n", who, message);
+	return -1;
 	gchar *room_id = g_hash_table_lookup(da->one_to_ones_rev, who);
 
 	/* Create DM if there isn't one */
