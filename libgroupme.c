@@ -70,14 +70,6 @@
 
 #define IGNORE_PRINTS
 
-static GRegex *channel_mentions_regex = NULL;
-static GRegex *role_mentions_regex = NULL;
-static GRegex *emoji_regex = NULL;
-static GRegex *emoji_natural_regex = NULL;
-static GRegex *action_star_regex = NULL;
-static GRegex *mention_regex = NULL;
-static GRegex *natural_mention_regex = NULL;
-
 typedef enum {
 	USER_ONLINE,
 	USER_IDLE,
@@ -4050,15 +4042,6 @@ groupme_cmd_nick(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 static gboolean
 plugin_load(PurplePlugin *plugin, GError **error)
 {
-
-	channel_mentions_regex = g_regex_new("&lt;#(\\d+)&gt;", G_REGEX_OPTIMIZE, 0, NULL);
-	role_mentions_regex = g_regex_new("&lt;@&amp;(\\d+)&gt;", G_REGEX_OPTIMIZE, 0, NULL);
-	emoji_regex = g_regex_new("&lt;:([^:]+):(\\d+)&gt;", G_REGEX_OPTIMIZE, 0, NULL);
-	emoji_natural_regex = g_regex_new(":([^:]+):", G_REGEX_OPTIMIZE, 0, NULL);
-	action_star_regex = g_regex_new("^_([^\\*]+)_$", G_REGEX_OPTIMIZE, 0, NULL);
-	mention_regex = g_regex_new("&lt;@!?(\\d+)&gt;", G_REGEX_OPTIMIZE, 0, NULL);
-	natural_mention_regex = g_regex_new("^([^:]+): ", G_REGEX_OPTIMIZE, 0, NULL);
-
 	purple_cmd_register("nick", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
 															PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						GROUPME_PLUGIN_ID, groupme_cmd_nick,
@@ -4105,14 +4088,6 @@ static gboolean
 plugin_unload(PurplePlugin *plugin, GError **error)
 {
 	purple_signals_disconnect_by_handle(plugin);
-
-	g_regex_unref(channel_mentions_regex);
-	g_regex_unref(role_mentions_regex);
-	g_regex_unref(emoji_regex);
-	g_regex_unref(emoji_natural_regex);
-	g_regex_unref(action_star_regex);
-	g_regex_unref(mention_regex);
-	g_regex_unref(natural_mention_regex);
 
 	return TRUE;
 }
