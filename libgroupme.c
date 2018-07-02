@@ -1080,18 +1080,11 @@ groupme_got_nick_change(GroupMeAccount *da, GroupMeUser *user, GroupMeGuild *gui
 	gpointer key, value;
 
 	/* TODO: Nick */
-#if 0
-	g_hash_table_iter_init(&channel_iter, guild->channels);
+	PurpleChatConversation *chat = purple_conversations_find_chat(da->pc, groupme_chat_hash(guild->id));
 
-	while (g_hash_table_iter_next(&channel_iter, &key, &value)) {
-		GroupMeChannel *channel = value;
-		PurpleChatConversation *chat = purple_conversations_find_chat(da->pc, groupme_chat_hash(channel->id));
-
-		if (chat && purple_chat_conversation_has_user(chat, old_safe)) {
-			purple_chat_conversation_rename_user(chat, old_safe, nick);
-		}
+	if (chat && purple_chat_conversation_has_user(chat, old_safe)) {
+		purple_chat_conversation_rename_user(chat, old_safe, nick);
 	}
-#endif
 
 	g_free(nick);
 }
@@ -1970,15 +1963,14 @@ groupme_chat_invite(PurpleConnection *pc, int id, const char *message, const cha
 static const gchar *
 groupme_resolve_nick(GroupMeAccount *da, guint64 id, guint64 channel)
 {
-	GroupMeUser *user = groupme_get_user(da, id);
-	GroupMeGuildMembership *guild_membership = g_hash_table_lookup_int64(user->guild_memberships, channel);
+	GroupMeGuild *g = groupme_get_guild(da, channel);
+	const gchar *nick = g_hash_table_lookup_int64(g->nicknames, id);
 
-	if (!guild_membership) {
-		/* Bail */
-		return user->name;
-	}
+	if (nick)
+		return nick;
 
-	return guild_membership->nick;
+	GroupMeUser *u = groupme_get_user(da, id);
+	return u->name;
 }
 
 static void
@@ -1994,31 +1986,25 @@ groupme_chat_nick(PurpleConnection *pc, int id, gchar *new_nick)
 		room_id = to_int(purple_conversation_get_name(PURPLE_CONVERSATION(chatconv)));
 	}
 
-	/* TODO: NICK */
-	printf("TODO: NICK\n");
-
-#if 0
-
 	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
+	GroupMeGuild *guild = groupme_get_guild(da, room_id);
 
-	GroupMeGuild *guild = NULL;
-	groupme_get_channel_global_int_guild(da, room_id, &guild);
-
+	JsonObject *container = json_object_new();
 	JsonObject *data = json_object_new();
-	json_object_set_string_member(data, "nick", new_nick);
-	gchar *postdata = json_object_to_string(data);
+	json_object_set_string_member(data, "nickname", new_nick);
+	json_object_set_object_member(container, "membership", data);
+	gchar *postdata = json_object_to_string(container);
 
-	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/guilds/%" G_GUINT64_FORMAT "/members/@me/nick", guild->id);
-	groupme_fetch_url_with_method(da, "PATCH", url, postdata, NULL, NULL);
+	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/groups/%" G_GUINT64_FORMAT "/memberships/update?", guild->id);
+	groupme_fetch_url(da, url, postdata, NULL, NULL);
 
 	g_free(url);
 	g_free(postdata);
-	json_object_unref(data);
+	json_object_unref(container);
 
 	/* Propragate locally as well */
 	const gchar *old_nick = g_hash_table_lookup_int64(guild->nicknames, da->self_user_id);
 	groupme_got_nick_change(da, groupme_get_user(da, da->self_user_id), guild, new_nick, old_nick, TRUE);
-#endif
 }
 
 static GList *
