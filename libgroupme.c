@@ -924,6 +924,8 @@ groupme_create_associate(GroupMeAccount *da, guint64 id)
 
 		/* Bring it up */
 		purple_protocol_got_user_status(da->account, id_s, "online", NULL);
+
+		groupme_get_avatar(da, user);
 	}
 }
 
@@ -2639,7 +2641,7 @@ static void
 groupme_got_avatar(GroupMeAccount *ya, JsonNode *node, gpointer user_data)
 {
 	GroupMeUser *user = user_data;
-	gchar *username = groupme_create_fullname(user);
+	gchar *username = user->id_s;
 
 	if (node != NULL) {
 		JsonObject *response = json_node_get_object(node);
@@ -2653,8 +2655,6 @@ groupme_got_avatar(GroupMeAccount *ya, JsonNode *node, gpointer user_data)
 
 		purple_buddy_icons_set_for_user(ya->account, username, response_dup, response_len, user->avatar);
 	}
-	
-	g_free(username);
 }
 
 static void
@@ -2664,7 +2664,7 @@ groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user)
 		return;
 	}
 
-	gchar *username = groupme_create_fullname(user);
+	gchar *username = from_int(user->id);
 	const gchar *checksum = purple_buddy_icons_get_checksum_for_user(purple_blist_find_buddy(da->account, username));
 	g_free(username);
 
@@ -2672,14 +2672,11 @@ groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user)
 		return;
 	}
 
-	GString *url = g_string_new("https://cdn.groupmeapp.com/avatars/");
-	g_string_append_printf(url, "%" G_GUINT64_FORMAT, user->id);
-	g_string_append_c(url, '/');
-	g_string_append_printf(url, "%s", purple_url_encode(user->avatar));
-
-	groupme_fetch_url(da, url->str, NULL, groupme_got_avatar, user);
-
-	g_string_free(url, TRUE);
+	/* Disable token for image requests */
+	gchar *token = da->token;
+	da->token = NULL;
+	groupme_fetch_url(da, user->avatar, NULL, groupme_got_avatar, user);
+	da->token = token;
 }
 
 static void
