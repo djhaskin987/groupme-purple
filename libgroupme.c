@@ -481,9 +481,8 @@ groupme_get_user_flags(GroupMeAccount *da, GroupMeGuild *guild, GroupMeUser *use
 	GroupMeGuildMembership *guild_membership = g_hash_table_lookup_int64(user->guild_memberships, gid);
 	PurpleChatUserFlags best_flag = user->bot ? PURPLE_CHAT_USER_VOICE : PURPLE_CHAT_USER_NONE;
 
-	if (guild_membership == NULL) {
+	if (guild_membership == NULL)
 		return best_flag;
-	}
 
 	if (guild_membership->is_op)
 		return PURPLE_CHAT_USER_OP;
@@ -1957,7 +1956,7 @@ groupme_chat_invite(PurpleConnection *pc, int id, const char *message, const cha
 }
 
 static const gchar *
-groupme_resolve_nick(GroupMeAccount *da, int id, int channel)
+groupme_resolve_nick(GroupMeAccount *da, guint64 id, guint64 channel)
 {
 	GroupMeUser *user = groupme_get_user(da, id);
 	GroupMeGuildMembership *guild_membership = g_hash_table_lookup_int64(user->guild_memberships, channel);
@@ -2260,7 +2259,7 @@ groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present)
 		GroupMeUser *u = groupme_get_user(da, uid);
 		PurpleChatUserFlags cbflags = groupme_get_user_flags(da, channel, u);
 
-		users = g_list_prepend(users, g_strdup(u->name));
+		users = g_list_prepend(users, g_strdup(groupme_resolve_nick(da, uid, channel->id)));
 		flags = g_list_prepend(flags, GINT_TO_POINTER(cbflags));
 	}
 
