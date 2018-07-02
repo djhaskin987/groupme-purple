@@ -51,8 +51,6 @@
 
 #define GROUPME_USERAGENT "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36"
 
-#define GROUPME_BUFFER_DEFAULT_SIZE 40960
-
 #define GROUPME_API_SERVER "api.groupme.com/v3"
 #define GROUPME_PUSH_SERVER "push.groupme.com/faye?"
 #define GROUPME_GATEWAY_SERVER "push.groupme.com"
@@ -69,13 +67,6 @@
 #endif
 
 #define IGNORE_PRINTS
-
-typedef enum {
-	USER_ONLINE,
-	USER_IDLE,
-	USER_OFFLINE,
-	USER_DND
-} GroupMeStatus;
 
 typedef struct {
 	guint64 id;
@@ -98,8 +89,6 @@ typedef struct {
 	guint64 id;
 	gchar *id_s;
 	gchar *name;
-	int discriminator;
-	gchar *game;
 	gchar *avatar;
 	GHashTable *guild_memberships;
 	gboolean bot;
@@ -2632,7 +2621,7 @@ groupme_get_info(PurpleConnection *pc, const gchar *username)
 	purple_notify_user_info_add_pair_html(user_info, _("Avatar"), user->avatar);
 
 	purple_notify_user_info_add_section_break(user_info);
-	purple_notify_user_info_add_pair_html(user_info, _("Mutual Groups"), user->game);
+	purple_notify_user_info_add_pair_html(user_info, _("Mutual Groups"), "");
 
 	GHashTableIter iter;
 	gpointer key, value;
@@ -2670,20 +2659,6 @@ groupme_status_types(PurpleAccount *account)
 static gchar *
 groupme_status_text(PurpleBuddy *buddy)
 {
-	PurpleAccount *account = purple_buddy_get_account(buddy);
-
-	if (purple_account_is_connected(account)) {
-		PurpleConnection *pc = purple_account_get_connection(account);
-		GroupMeAccount *da = purple_connection_get_protocol_data(pc);
-		GroupMeUser *user = groupme_get_user_fullname(da, purple_buddy_get_name(buddy));
-
-		if (user == NULL || user->game == NULL) {
-			return NULL;
-		}
-
-		return g_markup_printf_escaped(_("Playing %s"), user->game);
-	}
-
 	return NULL;
 }
 
@@ -2730,9 +2705,7 @@ groupme_list_emblem(PurpleBuddy *buddy)
 		GroupMeUser *user = groupme_get_user_fullname(da, purple_buddy_get_name(buddy));
 
 		if (user != NULL) {
-			if (user->game != NULL) {
-				return "game";
-			} else if (user->bot) {
+			if (user->bot) {
 				return "bot";
 			}
 		}
