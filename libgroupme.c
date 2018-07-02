@@ -2751,16 +2751,22 @@ groupme_get_info(PurpleConnection *pc, const gchar *username)
 {
 	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
 	gchar *url;
-	GroupMeUser *user = groupme_get_user_fullname(da, username);
+	GroupMeUser *user = groupme_get_user(da, to_int(username));
+	printf("Fetching for %s: %p\n", username, user);
 
 	if (!user) {
 		return;
 	}
 
-	/* TODO string format fix */
-	url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/users/%" G_GUINT64_FORMAT "/profile", user->id);
-	groupme_fetch_url(da, url, NULL, groupme_got_info, user);
-	g_free(url);
+	printf("Oink\n");
+
+	PurpleNotifyUserInfo *user_info;
+	user_info = purple_notify_user_info_new();
+
+	purple_notify_user_info_add_pair_html(user_info, _("ID"), username);
+	purple_notify_user_info_add_pair_html(user_info, _("Name"), user->name);
+	purple_notify_userinfo(da->pc, username, user_info, NULL, NULL);
+
 }
 
 static const char *
