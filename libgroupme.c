@@ -2683,90 +2683,44 @@ groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user)
 }
 
 static void
-groupme_got_info(GroupMeAccount *da, JsonNode *node, gpointer user_data)
-{
-	GroupMeUser *user = user_data;
-
-	PurpleNotifyUserInfo *user_info;
-	JsonObject *info = json_node_get_object(node);
-	JsonArray *connected_accounts = json_object_get_array_member(info, "connected_accounts");
-	JsonArray *mutual_guilds = json_object_get_array_member(info, "mutual_guilds");
-	gint i;
-
-	user_info = purple_notify_user_info_new();
-
-	gchar *id_str = from_int(user->id);
-	purple_notify_user_info_add_pair_html(user_info, _("ID"), id_str);
-	g_free(id_str);
-	
-	purple_notify_user_info_add_pair_html(user_info, _("Username"), user->name);
-
-	if (json_array_get_length(connected_accounts)) {
-		purple_notify_user_info_add_section_break(user_info);
-		purple_notify_user_info_add_pair_html(user_info, _("Connected Accounts"), user->game);
-	}
-
-	for (i = json_array_get_length(connected_accounts) - 1; i >= 0; i--) {
-		JsonObject *account = json_array_get_object_element(connected_accounts, i);
-		const gchar *type = json_object_get_string_member(account, "type");
-		const gchar *name = json_object_get_string_member(account, "name");
-
-		/* const gchar *id = json_object_get_string_member(account, "id"); */
-		/* TODO href link to account? */
-
-		purple_notify_user_info_add_pair_html(user_info, type, name);
-	}
-
-	if (json_array_get_length(mutual_guilds)) {
-		purple_notify_user_info_add_section_break(user_info);
-		purple_notify_user_info_add_pair_html(user_info, _("Mutual Servers"), user->game);
-	}
-
-	for (i = json_array_get_length(mutual_guilds) - 1; i >= 0; i--) {
-		JsonObject *guild_o = json_array_get_object_element(mutual_guilds, i);
-		guint64 id = to_int(json_object_get_string_member(guild_o, "id"));
-
-		GroupMeGuild *guild = groupme_get_guild(da, id);
-		GroupMeGuildMembership *membership = g_hash_table_lookup_int64(user->guild_memberships, id);
-
-		if (membership) {
-			gchar *name = membership->nick;
-			if (!name || !strlen(name)) {
-				name = user->name;
-			}
-
-			GString *role_str = g_string_new(name);
-
-			purple_notify_user_info_add_pair_html(user_info, guild->name, g_string_free(role_str, FALSE));
-		}
-	}
-
-	gchar *username = groupme_create_fullname(user);
-	purple_notify_userinfo(da->pc, username, user_info, NULL, NULL);
-	g_free(username);
-}
-
-static void
 groupme_get_info(PurpleConnection *pc, const gchar *username)
 {
 	GroupMeAccount *da = purple_connection_get_protocol_data(pc);
 	gchar *url;
 	GroupMeUser *user = groupme_get_user(da, to_int(username));
-	printf("Fetching for %s: %p\n", username, user);
 
 	if (!user) {
 		return;
 	}
-
-	printf("Oink\n");
 
 	PurpleNotifyUserInfo *user_info;
 	user_info = purple_notify_user_info_new();
 
 	purple_notify_user_info_add_pair_html(user_info, _("ID"), username);
 	purple_notify_user_info_add_pair_html(user_info, _("Name"), user->name);
-	purple_notify_userinfo(da->pc, username, user_info, NULL, NULL);
+	purple_notify_user_info_add_pair_html(user_info, _("Avatar"), user->avatar);
 
+	purple_notify_user_info_add_section_break(user_info);
+	purple_notify_user_info_add_pair_html(user_info, _("Mutual Groups"), user->game);
+
+	GHashTableIter iter;
+	gpointer key, value;
+
+	g_hash_table_iter_init(&iter, user->guild_memberships);
+
+	while (g_hash_table_iter_next(&iter, &key, &value)) {
+		GroupMeGuildMembership *membership = value;
+		GroupMeGuild *guild = groupme_get_guild(da, membership->id);
+		
+		gchar *name = membership->nick;
+
+		gchar *str = g_strdup_printf("%s%s", name, membership->is_op ? "*" : "");
+		purple_notify_user_info_add_pair_html(user_info, guild->name, str);
+		g_free(str);
+
+	}
+
+	purple_notify_userinfo(da->pc, username, user_info, NULL, NULL);
 }
 
 static const char *
