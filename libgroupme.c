@@ -397,28 +397,6 @@ groupme_upsert_user(GHashTable *user_table, JsonObject *json)
 }
 
 static gchar *
-groupme_create_fullname(GroupMeUser *user)
-{
-	g_return_val_if_fail(user != NULL, NULL);
-	
-	return g_strdup_printf("%s#%04d", user->name, user->discriminator);
-}
-
-static gchar *
-groupme_create_fullname_from_id(GroupMeAccount *da, guint64 id)
-{
-	GroupMeUser *user = groupme_get_user(da, id);
-
-	if (user) {
-		return groupme_create_fullname(user);
-	}
-
-	return NULL;
-}
-
-static gchar *groupme_create_nickname(GroupMeUser *author, GroupMeGuild *guild);
-
-static gchar *
 groupme_alloc_nickname(GroupMeUser *user, GroupMeGuild *guild, const gchar *suggested_nick)
 {
 	const gchar *base_nick = suggested_nick ? suggested_nick : user->name;
@@ -453,18 +431,6 @@ groupme_alloc_nickname(GroupMeUser *user, GroupMeGuild *guild, const gchar *sugg
 	g_hash_table_replace(guild->nicknames_rev, g_strdup(nick), g_memdup(&user->id, sizeof(user->id)));
 
 	return nick;
-}
-
-static gchar *
-groupme_create_nickname_from_id(GroupMeAccount *da, GroupMeGuild *g, guint64 id)
-{
-	GroupMeUser *user = groupme_get_user(da, id);
-
-	if (user) {
-		return groupme_create_nickname(user, g);
-	}
-
-	return NULL;
 }
 
 static GroupMeGuild *
@@ -882,24 +848,6 @@ static void groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user);
 
 static const gchar *groupme_normalise_room_name(const gchar *guild_name, const gchar *name);
 static GroupMeGuild *groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present);
-
-static gchar *
-groupme_create_nickname(GroupMeUser *author, GroupMeGuild *guild)
-{
-	if (!guild) {
-		return groupme_create_fullname(author);
-	}
-
-	gchar *name = g_hash_table_lookup_int64(guild->nicknames, author->id);
-
-	if (!name) {
-		name = groupme_create_fullname(author);
-	} else {
-		name = g_strdup(name);
-	}
-
-	return name;
-}
 
 static void
 groupme_create_associate(GroupMeAccount *da, guint64 id)
