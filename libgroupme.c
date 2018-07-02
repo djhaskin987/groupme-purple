@@ -191,9 +191,21 @@ groupme_new_user(JsonObject *json)
 	GroupMeUser *user = g_new0(GroupMeUser, 1);
 
 	user->id_s = json_object_get_string_member(json, "user_id");
+
+	if (!user->id_s)
+		user->id_s = json_object_get_string_member(json, "id");
+
 	user->id = to_int(user->id_s);
-	user->name = g_strdup(json_object_get_string_member(json, "nickname"));
+
+	user->name = json_object_get_string_member(json, "nickname");
+
+	if (!user->name)
+		user->name = json_object_get_string_member(json, "name");
+
 	user->avatar = g_strdup(json_object_get_string_member(json, "image_url"));
+
+	user->name = g_strdup(user->name);
+	user->id_s = g_strdup(user->id_s);
 
 	user->guild_memberships = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild_membership);
 
@@ -367,7 +379,12 @@ groupme_get_user(GroupMeAccount *da, guint64 id)
 static GroupMeUser *
 groupme_upsert_user(GHashTable *user_table, JsonObject *json)
 {
-	guint64 *key = NULL, user_id = to_int(json_object_get_string_member(json, "user_id"));
+	const gchar *suid = json_object_get_string_member(json, "user_id");
+
+	if (!suid)
+		suid = json_object_get_string_member(json, "id");
+
+	guint64 *key = NULL, user_id = to_int(suid);
 	GroupMeUser *user = NULL;
 
 	if (g_hash_table_lookup_extended_int64(user_table, user_id, (gpointer) &key, (gpointer) &user)) {
@@ -859,6 +876,7 @@ static void groupme_got_history_static(GroupMeAccount *da, JsonNode *node, gpoin
 static void groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_populate_guild(GroupMeAccount *da, JsonObject *guild);
 static void groupme_got_guilds(GroupMeAccount *da, JsonNode *node, gpointer user_data);
+static void groupme_got_chats(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_got_avatar(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user);
 
@@ -1329,8 +1347,6 @@ groupme_got_guilds(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	JsonObject *container = json_node_get_object(node);
 	JsonArray *guilds = json_object_get_array_member(container, "response");
 	guint len = json_array_get_length(guilds);
-	JsonArray *guild_ids = json_array_new();
-	JsonObject *obj;
 
 	for (int i = len - 1; i >= 0; i--) {
 		JsonObject *guild = json_array_get_object_element(guilds, i);
@@ -1338,20 +1354,23 @@ groupme_got_guilds(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	}
 }
 
-/* If count is explicitly specified, use a static request (DMs).
- * If it is not, use a dynamic request (rooms).
- * TODO: Possible edge case if there are over 100 incoming DMs?
- */
-
 static void
-groupme_get_history(GroupMeAccount *da, const gchar *channel, const gchar *last, int count)
+groupme_got_chats(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
-#if 0
-	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%s/messages?limit=%d&after=%s", channel, count ? count : 100, last);
-	groupme_fetch_url(da, url, NULL, count ? groupme_got_history_static : groupme_got_history_of_room, count ? NULL : groupme_get_channel_global(da, channel));
-	g_free(url);
-#endif
-	printf("GET DM HISTORY\n");
+	JsonObject *container = json_node_get_object(node);
+	JsonArray *chats = json_object_get_array_member(container, "response");
+	guint len = json_array_get_length(chats);
+
+	for (int i = len - 1; i >= 0; i--) {
+		JsonObject *chat = json_array_get_object_element(chats, i);
+		JsonObject *msg = json_object_get_object_member(chat, "last_message");
+		JsonObject *other = json_object_get_object_member(chat, "other_user");
+		const gchar *chan = json_object_get_string_member(other, "id");
+
+		/* TODO: Actually fetch history, rolling, save counts, etc */
+		groupme_upsert_user(da->new_users, other);
+		groupme_process_message(da, to_int(chan), msg, TRUE);
+	}
 }
 
 static void
@@ -1492,6 +1511,7 @@ groupme_login(PurpleAccount *account)
 	/* Test the REST API */
 	groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
 	groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/groups?", NULL, groupme_got_guilds, NULL);
+	groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/chats?", NULL, groupme_got_chats, NULL);
 
 	/* XXX: Authenticate good */
 	purple_connection_set_state(da->pc, PURPLE_CONNECTION_CONNECTED);
