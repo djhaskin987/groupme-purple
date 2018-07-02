@@ -99,7 +99,6 @@ typedef struct {
 	gchar *id_s;
 	gchar *name;
 	int discriminator;
-	GroupMeStatus status;
 	gchar *game;
 	gchar *avatar;
 	GHashTable *guild_memberships;
@@ -904,6 +903,9 @@ groupme_create_associate(GroupMeAccount *da, guint64 id)
 
 		buddy = purple_buddy_new(da->account, id_s, user->name);
 		purple_blist_add_buddy(buddy, NULL, groupme_get_or_create_group("GroupMe"), NULL);
+
+		/* Bring it up */
+		purple_protocol_got_user_status(da->account, id_s, "online", NULL);
 	}
 }
 
@@ -1124,6 +1126,22 @@ groupme_got_nick_change(GroupMeAccount *da, GroupMeUser *user, GroupMeGuild *gui
 #endif
 
 	g_free(nick);
+}
+
+PurpleChat *
+groupme_bring_up_buddies(PurpleAccount *account)
+{
+	PurpleBlistNode *node;
+	GSList *lst = purple_find_buddies(account, NULL);
+
+	while (lst) {
+		PurpleBuddy *buddy = (PurpleBuddy *) lst->data;
+		purple_protocol_got_user_status(account, buddy->name, "online", NULL);
+		purple_protocol_got_user_idle(account, buddy->name, 0, 0);
+		lst = g_slist_delete_link(lst, lst);
+	}
+	
+	return NULL;
 }
 
 PurpleChat *
@@ -1477,7 +1495,8 @@ groupme_login(PurpleAccount *account)
 
 	/* XXX: Authenticate good */
 	purple_connection_set_state(da->pc, PURPLE_CONNECTION_CONNECTED);
-	
+	groupme_bring_up_buddies(da->account);
+
 	if (!chat_conversation_typing_signal) {
 		chat_conversation_typing_signal = purple_signal_connect(purple_conversations_get_handle(), "chat-conversation-typing", purple_connection_get_protocol(pc), PURPLE_CALLBACK(groupme_conv_send_typing), NULL);
 	}
@@ -2662,20 +2681,6 @@ groupme_got_info(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	
 	purple_notify_user_info_add_pair_html(user_info, _("Username"), user->name);
 
-	/* Display other non-profile info that we know about this buddy */
-	gchar *status_strings[4] = {
-		_("Online"),
-		_("Idle"),
-		_("Offline"),
-		_("Do Not Disturb")
-	};
-
-	purple_notify_user_info_add_pair_html(user_info, _("Status"), status_strings[user->status]);
-
-	if (user->game != NULL) {
-		purple_notify_user_info_add_pair_html(user_info, _("Playing"), user->game);
-	}
-
 	if (json_array_get_length(connected_accounts)) {
 		purple_notify_user_info_add_section_break(user_info);
 		purple_notify_user_info_add_pair_html(user_info, _("Connected Accounts"), user->game);
@@ -2747,40 +2752,8 @@ groupme_list_icon(PurpleAccount *account, PurpleBuddy *buddy)
 static GList *
 groupme_status_types(PurpleAccount *account)
 {
-	GList *types = NULL;
-	PurpleStatusType *status;
-	gboolean use_status_as_game = purple_account_get_bool(account, "use-status-as-game", FALSE);
-
-	/* We can only set statuses without in-game info */
-	status = purple_status_type_new_full(PURPLE_STATUS_AVAILABLE, "set-online", _("Online"), TRUE, !use_status_as_game, FALSE);
-	types = g_list_append(types, status);
-
-	status = purple_status_type_new_full(PURPLE_STATUS_AWAY, "set-idle", _("Idle"), TRUE, !use_status_as_game, FALSE);
-	types = g_list_append(types, status);
-
-	status = purple_status_type_new_full(PURPLE_STATUS_UNAVAILABLE, "set-dnd", _("Do Not Disturb"), TRUE, !use_status_as_game, FALSE);
-	types = g_list_append(types, status);
-
-	status = purple_status_type_new_full(PURPLE_STATUS_INVISIBLE, "set-invisible", _("Invisible"), TRUE, TRUE, FALSE);
-	types = g_list_append(types, status);
-
-	status = purple_status_type_new_full(PURPLE_STATUS_OFFLINE, "set-offline", _("Offline"), TRUE, TRUE, FALSE);
-	types = g_list_append(types, status);
-
-	/* Other people can have an in-game display */
-	status = purple_status_type_new_with_attrs(PURPLE_STATUS_AVAILABLE, "online", _("Online"), TRUE, use_status_as_game, FALSE, "message", _("Playing"), purple_value_new(PURPLE_TYPE_STRING), NULL);
-	types = g_list_append(types, status);
-
-	status = purple_status_type_new_with_attrs(PURPLE_STATUS_AWAY, "idle", _("Idle"), TRUE, use_status_as_game, FALSE, "message", _("Playing"), purple_value_new(PURPLE_TYPE_STRING), NULL);
-	types = g_list_append(types, status);
-
-	status = purple_status_type_new_with_attrs(PURPLE_STATUS_UNAVAILABLE, "dnd", _("Do Not Disturb"), TRUE, use_status_as_game, FALSE, "message", _("Playing"), purple_value_new(PURPLE_TYPE_STRING), NULL);
-	types = g_list_append(types, status);
-
-	status = purple_status_type_new_with_attrs(PURPLE_STATUS_OFFLINE, "offline", _("Offline"), TRUE, FALSE, FALSE, "message", _("Playing"), purple_value_new(PURPLE_TYPE_STRING), NULL);
-	types = g_list_append(types, status);
-
-	return types;
+	PurpleStatusType *status = purple_status_type_new_full(PURPLE_STATUS_AVAILABLE, "online", _("Online"), TRUE, FALSE, FALSE);
+	return g_list_append(NULL, status);
 }
 
 static gchar *
