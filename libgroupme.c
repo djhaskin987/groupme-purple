@@ -854,7 +854,7 @@ groupme_init_push(GroupMeAccount *da)
 
 void groupme_handle_add_new_user(GroupMeAccount *ya, JsonObject *obj);
 
-PurpleGroup *groupme_get_or_create_default_group();
+PurpleGroup *groupme_get_or_create_group(const gchar *name);
 
 static void groupme_got_history_static(GroupMeAccount *da, JsonNode *node, gpointer user_data);
 static void groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_data);
@@ -902,10 +902,8 @@ groupme_create_associate(GroupMeAccount *da, guint64 id)
 			return;
 		}
 
-		printf("Associating\n");
-
 		buddy = purple_buddy_new(da->account, id_s, user->name);
-		purple_blist_add_buddy(buddy, NULL, groupme_get_or_create_default_group(), NULL);
+		purple_blist_add_buddy(buddy, NULL, groupme_get_or_create_group("GroupMe"), NULL);
 	}
 }
 
@@ -1180,10 +1178,6 @@ groupme_add_channel_to_blist(GroupMeAccount *da, GroupMeGuild *channel, PurpleGr
 	g_hash_table_replace(components, g_strdup("id"), id);
 	g_hash_table_replace(components, g_strdup("name"), g_strdup(channel->name));
 
-	if (!group) {
-		group = groupme_get_or_create_default_group();
-	}
-	
 	/* Don't re-add the channel to the same group */
 	
 	if (groupme_find_chat_in_group(da->account, id, group) == NULL) {
@@ -1195,12 +1189,12 @@ groupme_add_channel_to_blist(GroupMeAccount *da, GroupMeGuild *channel, PurpleGr
 }
 
 PurpleGroup *
-groupme_get_or_create_default_group()
+groupme_get_or_create_group(const gchar *name)
 {
-	PurpleGroup *groupme_group = purple_blist_find_group("GroupMe");
+	PurpleGroup *groupme_group = purple_blist_find_group(name);
 
 	if (!groupme_group) {
-		groupme_group = purple_group_new("GroupMe");
+		groupme_group = purple_group_new(name);
 		purple_blist_add_group(groupme_group, NULL);
 	}
 
@@ -1292,7 +1286,7 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
 	gchar *name = json_object_get_string_member(guild, "name");
 
 	/* Add chat to blist */
-	PurpleGroup *group = groupme_get_or_create_default_group();
+	PurpleGroup *group = groupme_get_or_create_group("GroupMe Chats");
 	groupme_add_channel_to_blist(da, g, group);
 
 	JsonArray *members = json_object_get_array_member(guild, "members");
