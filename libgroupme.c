@@ -898,6 +898,7 @@ groupme_get_real_name(PurpleConnection *pc, gint id, const char *who)
 	}
 
 	guint64 room_id = *room_id_ptr;
+	printf("Get real name for %s in %d\n", who, room_id);
 
 #if 0
 	GroupMeGuild *guild = NULL;
@@ -1961,6 +1962,20 @@ groupme_chat_invite(PurpleConnection *pc, int id, const char *message, const cha
 
 }
 
+static const gchar *
+groupme_resolve_nick(GroupMeAccount *da, int id, int channel)
+{
+	GroupMeUser *user = groupme_get_user(da, id);
+	GroupMeGuildMembership *guild_membership = g_hash_table_lookup_int64(user->guild_memberships, channel);
+
+	if (!guild_membership) {
+		/* Bail */
+		return user->name;
+	}
+
+	return guild_membership->nick;
+}
+
 static void
 groupme_chat_nick(PurpleConnection *pc, int id, gchar *new_nick)
 {
@@ -2508,7 +2523,7 @@ groupme_chat_send(PurpleConnection *pc, gint id,
 	ret = groupme_conversation_send_message(da, room_id, message, FALSE);
 
 	if (ret > 0) {
-		purple_serv_got_chat_in(pc, groupme_chat_hash(room_id), da->self_username, PURPLE_MESSAGE_SEND, message, time(NULL));
+		purple_serv_got_chat_in(pc, groupme_chat_hash(room_id), groupme_resolve_nick(da, da->self_user_id, room_id), PURPLE_MESSAGE_SEND, message, time(NULL));
 
 	}
 
