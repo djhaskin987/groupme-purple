@@ -96,6 +96,7 @@ typedef struct {
 
 typedef struct {
 	guint64 id;
+	gchar *id_s;
 	gchar *name;
 	int discriminator;
 	GroupMeStatus status;
@@ -190,7 +191,8 @@ groupme_new_user(JsonObject *json)
 {
 	GroupMeUser *user = g_new0(GroupMeUser, 1);
 
-	user->id = to_int(json_object_get_string_member(json, "user_id"));
+	user->id_s = json_object_get_string_member(json, "user_id");
+	user->id = to_int(user->id_s);
 	user->name = g_strdup(json_object_get_string_member(json, "nickname"));
 	user->avatar = g_strdup(json_object_get_string_member(json, "image_url"));
 
@@ -882,6 +884,31 @@ groupme_create_nickname(GroupMeUser *author, GroupMeGuild *guild)
 	return name;
 }
 
+static void
+groupme_create_associate(GroupMeAccount *da, guint64 id)
+{
+	gchar *id_s = from_int(id);
+
+	/* First, check to see if we already are associated */
+	PurpleBuddy *buddy = purple_find_buddy(da->account, id_s);
+
+	/* If not, associate */
+
+	if (!buddy) {
+		GroupMeUser *user = groupme_get_user(da, id);
+
+		if (!user) {
+			printf("Not associating with unknown user %d\n", id);
+			return;
+		}
+
+		printf("Associating\n");
+
+		buddy = purple_buddy_new(da->account, id_s, user->name);
+		purple_blist_add_buddy(buddy, NULL, groupme_get_or_create_default_group(), NULL);
+	}
+}
+
 static gchar *
 groupme_get_real_name(PurpleConnection *pc, gint id, const char *who)
 {
@@ -904,8 +931,10 @@ groupme_get_real_name(PurpleConnection *pc, gint id, const char *who)
 
 	guint64 *uid = g_hash_table_lookup(channel->nicknames_rev, who);
 
-	if (uid)
+	if (uid) {
+		groupme_create_associate(da, *uid);
 		return from_int(*uid);
+	}
 
 /* Probably a fullname already, bail out */
 bail:
@@ -946,7 +975,7 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 			PurpleIMConversation *imconv;
 			PurpleMessage *msg;
 
-			gchar *username = groupme_get_user(da, channel)->name;
+			gchar *username = groupme_get_user(da, channel)->id_s;
 			imconv = purple_conversations_find_im_with_account(username, da->account);
 
 			if (imconv == NULL) {
@@ -975,7 +1004,7 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 			}
 		} else {
 			GroupMeUser *author = groupme_upsert_user(da->new_users, data);
-			gchar *merged_username = author->name;
+			gchar *merged_username = author->id_s;
 
 			if (content && *content) {
 				purple_serv_got_im(da->pc, merged_username, content, flags, timestamp);
@@ -2545,7 +2574,8 @@ groupme_send_im(PurpleConnection *pc,
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
 		PurpleMessage *msg = purple_message_new_outgoing(who, message, flags);
 #endif
-		GroupMeUser *user = groupme_get_user_name(da, 0, who);
+		guint64 uid = to_int(who);
+		GroupMeUser *user = groupme_get_user(da, uid);
 		
 		if (!user) {
 			purple_debug_error("groupme", "Bad user: %s\n", who);
@@ -2554,8 +2584,8 @@ groupme_send_im(PurpleConnection *pc,
 
 		
 		/* Cache it */
-		g_hash_table_replace(da->one_to_ones, from_int(user->id), g_strdup(who));
-		g_hash_table_replace(da->one_to_ones_rev, g_strdup(who), from_int(user->id));
+		g_hash_table_replace(da->one_to_ones, from_int(uid), g_strdup(who));
+		g_hash_table_replace(da->one_to_ones_rev, g_strdup(who), from_int(uid));
 
 		room_id_i = user->id;
 	} else {
