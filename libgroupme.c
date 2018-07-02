@@ -898,23 +898,16 @@ groupme_get_real_name(PurpleConnection *pc, gint id, const char *who)
 	}
 
 	guint64 room_id = *room_id_ptr;
-	printf("Get real name for %s in %d\n", who, room_id);
 
-#if 0
-	GroupMeGuild *guild = NULL;
-	groupme_get_channel_global_int_guild(da, room_id, &guild);
+	GroupMeGuild *channel = groupme_get_guild(da, room_id);
 
-	if (!guild) {
+	if (!channel)
 		goto bail;
-	}
 
-	guint64 *uid = g_hash_table_lookup(guild->nicknames_rev, who);
+	guint64 *uid = g_hash_table_lookup(channel->nicknames_rev, who);
 
-	if (uid) {
-		GroupMeUser *user = groupme_get_user(da, *uid);
-		return groupme_create_fullname(user);
-	}
-#endif
+	if (uid)
+		return from_int(*uid);
 
 /* Probably a fullname already, bail out */
 bail:
@@ -1286,6 +1279,7 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
 
 		GroupMeGuildMembership *membership = groupme_new_guild_membership(g->id, member);
 		g_hash_table_replace_int64(u->guild_memberships, g->id, membership);
+		g_hash_table_replace(g->nicknames_rev, g_strdup(membership->nick), g_memdup(&u->id, sizeof(u->id)));
 	}
 }
 
