@@ -220,7 +220,6 @@ groupme_new_guild_membership(guint64 id, JsonObject *json)
 	GroupMeGuildMembership *guild_membership = g_new0(GroupMeGuildMembership, 1);
 
 	guild_membership->id = id;
-	guild_membership->nick = g_strdup(json_object_get_string_member(json, "nickname"));
 
 	/* Search for op roles */
 	JsonArray *roles = json_object_get_array_member(json, "roles");
@@ -411,20 +410,20 @@ groupme_alloc_nickname(GroupMeUser *user, GroupMeGuild *guild, const gchar *sugg
 		return NULL;
 	}
 
-	GroupMeUser *existing = g_hash_table_lookup(guild->nicknames_rev, base_nick);
+	guint64 *existing = g_hash_table_lookup(guild->nicknames_rev, base_nick);
 	
-	if (existing && existing->id != user->id) {
-		/* Ambiguous; try with the discriminator */
+	if (existing && *existing != user->id) {
+		/* Ambiguous; try with the real name */
 
-		nick = g_strdup_printf("%s#%04d", base_nick, user->discriminator);
+		nick = g_strdup_printf("%s (%s)", base_nick, user->name);
 
 		existing = g_hash_table_lookup(guild->nicknames_rev, nick);
 
-		if (existing && existing->id != user->id) {
-			/* Ambiguous; use the full tag */
+		if (existing && *existing != user->id) {
+			/* Ambiguous; use the UUID */
 
 			g_free(nick);
-			nick = g_strdup_printf("%s (%s#%04d)", base_nick, user->name, user->discriminator);
+			nick = g_strdup_printf("%s (%" G_GUINT64_FORMAT ")", base_nick, user->id);
 		}
 	}
 	
@@ -1279,7 +1278,8 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
 
 		GroupMeGuildMembership *membership = groupme_new_guild_membership(g->id, member);
 		g_hash_table_replace_int64(u->guild_memberships, g->id, membership);
-		g_hash_table_replace(g->nicknames_rev, g_strdup(membership->nick), g_memdup(&u->id, sizeof(u->id)));
+
+		membership->nick = groupme_alloc_nickname(u, g, json_object_get_string_member(member, "nickname"));
 	}
 }
 
