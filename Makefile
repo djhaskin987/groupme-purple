@@ -25,7 +25,7 @@ else
 PLUGIN_VERSION ?= 0.9.$(shell date +%Y.%m.%d)
 endif
 
-CFLAGS	?= -O2 -g -pipe -Wall
+CFLAGS	?= -I/usr/lib64/glib-2.0/include/ -I/usr/include/glib-2.0/ -O2 -g -pipe -Wall
 LDFLAGS ?= -Wl,-z,relro
 
 CFLAGS  += -std=c99 -DGROUPME_PLUGIN_VERSION='"$(PLUGIN_VERSION)"'
@@ -129,13 +129,15 @@ install: $(GROUPME_TARGET) install-icons install-locales
 	mkdir -m $(DIR_PERM) -p $(GROUPME_DEST)
 	install -m $(LIB_PERM) -p $(GROUPME_TARGET) $(GROUPME_DEST)
 
-install-icons: groupme16.png groupme22.png groupme48.png
+install-icons: groupme16.png groupme22.png groupme48.png groupme.svg
 	mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/16
 	mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/22
 	mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/48
+	mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/scalable
 	install -m $(FILE_PERM) -p groupme16.png $(GROUPME_ICONS_DEST)/16/groupme.png
 	install -m $(FILE_PERM) -p groupme22.png $(GROUPME_ICONS_DEST)/22/groupme.png
 	install -m $(FILE_PERM) -p groupme48.png $(GROUPME_ICONS_DEST)/48/groupme.png
+	install -m $(FILE_PERM) -p groupme.svg $(GROUPME_ICONS_DEST)/scalable/groupme.svg
 
 install-locales: $(patsubst po/%.po, %-locale-install, $(wildcard po/*.po))
 
