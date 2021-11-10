@@ -1,0 +1,13 @@
+* text=auto
+
+.gitattributes text
+.gitignore text
+
+*.c text
+*.h text
+
+*.a binary
+*.so binary
+*.o binary
+
+*.png binary
