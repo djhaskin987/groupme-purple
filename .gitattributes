@@ -3,8 +3,10 @@
 .gitattributes text
 .gitignore text
 
+
 *.c text
 *.h text
+*.svg text
 
 *.a binary
 *.so binary
