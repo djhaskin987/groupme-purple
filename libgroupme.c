@@ -162,7 +162,7 @@ from_int(guint64 id)
 /** libpurple requires unique chat id's per conversation.
 	we use a hash function to convert the 64bit conversation id
 	into a platform-dependent chat id (worst case 32bit).
-	previously we used g_int64_hash() from glib, 
+	previously we used g_int64_hash() from glib,
 	however libpurple requires positive integers */
 static gint
 groupme_chat_hash(guint64 chat_id)
@@ -302,7 +302,7 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 	if (node != NULL) {
 		JsonArray *responseA = json_node_get_array(node);
 		JsonObject *response = json_array_get_object_element(responseA, 0);
-		
+
 		if (json_object_has_member(response, "successful")) {
 			const gchar *clientId = json_object_get_string_member(response, "clientId");
 			da->client_id = g_strdup(clientId);
@@ -345,18 +345,18 @@ static GroupMeUser *
 groupme_get_user_fullname(GroupMeAccount *da, const gchar *name)
 {
 	g_return_val_if_fail(name && *name, NULL);
-	
+
 	gchar **split_name = g_strsplit(name, "#", 2);
 	GroupMeUser *user = NULL;
-	
+
 	if (split_name != NULL) {
 		if (split_name[0] && split_name[1]) {
 			user = groupme_get_user_name(da, to_int(split_name[1]), split_name[0]);
 		}
-		
+
 		g_strfreev(split_name);
 	}
-	
+
 	return user;
 }
 static GroupMeUser *
@@ -396,7 +396,7 @@ groupme_alloc_nickname(GroupMeUser *user, GroupMeGuild *guild, const gchar *sugg
 	}
 
 	guint64 *existing = g_hash_table_lookup(guild->nicknames_rev, base_nick);
-	
+
 	if (existing && *existing != user->id) {
 		/* Ambiguous; try with the real name */
 
@@ -411,7 +411,7 @@ groupme_alloc_nickname(GroupMeUser *user, GroupMeGuild *guild, const gchar *sugg
 			nick = g_strdup_printf("%s (%" G_GUINT64_FORMAT ")", base_nick, user->id);
 		}
 	}
-	
+
 	if (!nick) {
 		nick = g_strdup(base_nick);
 	}
@@ -647,7 +647,7 @@ groupme_fetch_url_with_method(GroupMeAccount *ya, const gchar *method, const gch
 
 	/* Attach token to requests */
 	gchar *url = g_strdup(_url);
-	
+
 	if (ya->token) {
 		g_free(url);
 		url = g_strdup_printf("%s&token=%s", _url, ya->token);
@@ -662,7 +662,7 @@ groupme_fetch_url_with_method(GroupMeAccount *ya, const gchar *method, const gch
 	purple_http_request_header_set(request, "Accept", "*/*");
 	purple_http_request_header_set(request, "User-Agent", GROUPME_USERAGENT);
 	purple_http_request_header_set(request, "Cookie", cookies);
-	
+
 	if (postdata) {
 		if (strstr(url, "/login") && strstr(postdata, "password")) {
 			purple_debug_info("groupme", "With postdata ###PASSWORD REMOVED###\n");
@@ -800,7 +800,7 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
 #ifdef USE_LONG_POLL
 	/* Long polling consists of repeated reqeusts to the push server */
-	groupme_init_push(da);	
+	groupme_init_push(da);
 #endif
 }
 
@@ -915,8 +915,10 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 	gint i;
 
 	/* Drop our own messages that were pinged back to us */
-	if ((author_id == da->self_user_id) && g_hash_table_remove(da->sent_message_ids, guid))
+	if (author_id == da->self_user_id) {
+        g_hash_table_remove(da->sent_message_ids, guid);
 		return;
+    }
 
 	if (author_id == da->self_user_id && is_dm) {
 		flags = PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED;
@@ -1090,7 +1092,7 @@ groupme_bring_up_buddies(PurpleAccount *account)
 		purple_protocol_got_user_idle(account, buddy->name, 0, 0);
 		lst = g_slist_delete_link(lst, lst);
 	}
-	
+
 	return NULL;
 }
 
@@ -1098,7 +1100,7 @@ PurpleChat *
 groupme_find_chat_from_node(PurpleAccount *account, const char *id, PurpleBlistNode *root)
 {
 	PurpleBlistNode *node;
-	
+
 	for (node = root;
 		 node != NULL;
 		 node = purple_blist_node_next(node, TRUE)) {
@@ -1108,16 +1110,16 @@ groupme_find_chat_from_node(PurpleAccount *account, const char *id, PurpleBlistN
 			if (purple_chat_get_account(chat) != account) {
 				continue;
 			}
-			
+
 			GHashTable *components = purple_chat_get_components(chat);
 			const gchar *chat_id = g_hash_table_lookup(components, "id");
-			
+
 			if (purple_strequal(chat_id, id)) {
 				return chat;
 			}
 		}
 	}
-	
+
 	return NULL;
 }
 
@@ -1132,7 +1134,7 @@ PurpleChat *
 groupme_find_chat_in_group(PurpleAccount *account, const char *id, PurpleGroup *group)
 {
 	g_return_val_if_fail(group != NULL, NULL);
-	
+
 	return groupme_find_chat_from_node(account, id, PURPLE_BLIST_NODE(group));
 }
 
@@ -1142,12 +1144,12 @@ groupme_add_channel_to_blist(GroupMeAccount *da, GroupMeGuild *channel, PurpleGr
 {
 	GHashTable *components = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	gchar *id = from_int(channel->id);
-	
+
 	g_hash_table_replace(components, g_strdup("id"), id);
 	g_hash_table_replace(components, g_strdup("name"), g_strdup(channel->name));
 
 	/* Don't re-add the channel to the same group */
-	
+
 	if (groupme_find_chat_in_group(da->account, id, group) == NULL) {
 		PurpleChat *chat = purple_chat_new(da->account, channel->name, components);
 		purple_blist_add_chat(chat, group, NULL);
@@ -1218,7 +1220,7 @@ groupme_roomlist_get_list(PurpleConnection *pc)
 
 		PurpleRoomlistRoom *room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, g->name, NULL);
 		gchar *channel_id = from_int(g->id);
-		
+
 		purple_roomlist_room_add_field(roomlist, room, channel_id);
 		purple_roomlist_room_add(roomlist, room);
 
@@ -2289,7 +2291,7 @@ groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	}
 #endif
 
-	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/groups/%" G_GUINT64_FORMAT "/messages?limit=100", id); 
+	gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/groups/%" G_GUINT64_FORMAT "/messages?limit=100", id);
 	groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
 }
 
@@ -2534,13 +2536,13 @@ groupme_send_im(PurpleConnection *pc,
 #endif
 		guint64 uid = to_int(who);
 		GroupMeUser *user = groupme_get_user(da, uid);
-		
+
 		if (!user) {
 			purple_debug_error("groupme", "Bad user: %s\n", who);
 			return 1;
 		}
 
-		
+
 		/* Cache it */
 		g_hash_table_replace(da->one_to_ones, from_int(uid), g_strdup(who));
 		g_hash_table_replace(da->one_to_ones_rev, g_strdup(who), from_int(uid));
@@ -2631,7 +2633,7 @@ groupme_get_info(PurpleConnection *pc, const gchar *username)
 	while (g_hash_table_iter_next(&iter, &key, &value)) {
 		GroupMeGuildMembership *membership = value;
 		GroupMeGuild *guild = groupme_get_guild(da, membership->id);
-		
+
 		gchar *name = membership->nick;
 
 		gchar *str = g_strdup_printf("%s%s", name, membership->is_op ? "*" : "");
@@ -3113,7 +3115,7 @@ PURPLE_DEFINE_TYPE_EXTENDED(
 
 	PURPLE_IMPLEMENT_INTERFACE_STATIC(PURPLE_TYPE_PROTOCOL_CLIENT_IFACE,
 									  groupme_protocol_client_iface_init)
-								  
+
 	PURPLE_IMPLEMENT_INTERFACE_STATIC(PURPLE_TYPE_PROTOCOL_PRIVACY_IFACE,
 									  groupme_protocol_privacy_iface_init)
 
@@ -3156,7 +3158,7 @@ plugin_query(GError **error)
 	bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
 	bind_textdomain_codeset(GETTEXT_PACKAGE, "UTF-8");
 #endif
-	
+
 	return purple_plugin_info_new(
 	  "id", GROUPME_PLUGIN_ID,
 	  "name", "GroupMe",
