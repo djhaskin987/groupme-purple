@@ -1,5 +1,6 @@
 /*
  *   GroupMe plugin for libpurple
+ *   Copyright (C) 2021 Daniel Jay Haskin
  *   Copyright (C) 2017-2018 Alyssa Rosenzweig
  *   Copyright (C) 2016  Eion Robb
  *
