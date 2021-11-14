@@ -2091,6 +2091,38 @@ groupme_get_chat_name(GHashTable *data)
 static void groupme_set_room_last_id(GroupMeAccount *da, guint64 channel_id, guint64 last_id);
 
 static void
+groupme_got_history_of_im(GroupMeAccount *da, JsonNode *node, gpointer user_data)
+{
+    JsonObject *container = json_node_get_object(node);
+    JsonObject *resp = json_object_get_object_member(container, "response");
+    JsonArray *messages = json_object_get_array_member(resp, "direct_messages");
+
+    GroupMeGuild *channel = user_data;
+    gint i, len = json_array_get_length(messages);
+    guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
+    guint64 rolling_last_message_id = 0;
+
+    /* latest are first */
+    for (i = 0; i < len; i--) {
+        JsonObject *message = json_array_get_object_element(messages, i);
+        rolling_last_message_id = groupme_process_message(da, channel->id, message, FALSE);
+    }
+
+    if (rolling_last_message_id != 0) {
+        /* ACK HISTORY ACK */
+#if 0
+        groupme_set_room_last_id(da, channel->id, rolling_last_message_id);
+
+        if (rolling_last_message_id < last_message) {
+            /* Request the next 100 messages */
+            gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages?limit=100&after=%" G_GUINT64_FORMAT, channel->id, rolling_last_message_id);
+            groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
+            g_free(url);
+        }
+#endif
+    }
+}
+static void
 groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
     JsonObject *container = json_node_get_object(node);
@@ -2130,6 +2162,48 @@ groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_da
 #endif
     }
 }
+
+groupme_got_history_of_in(GroupMeAccount *da, JsonNode *node, gpointer user_data)
+{
+    JsonObject *container = json_node_get_object(node);
+    JsonObject *resp = json_object_get_object_member(container, "response");
+    JsonArray *messages = json_object_get_array_member(resp, "messages");
+
+    GroupMeGuild *channel = user_data;
+    gint i, len = json_array_get_length(messages);
+    guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
+    guint64 rolling_last_message_id = 0;
+
+    /* latest are first */
+    for (i = len - 1; i >= 0; i--) {
+        JsonObject *message = json_array_get_object_element(messages, i);
+#if 0
+        guint64 id = to_int(json_object_get_string_member(message, "id"));
+
+        if (id >= last_message) {
+            break;
+        }
+
+#endif
+        rolling_last_message_id = groupme_process_message(da, channel->id, message, FALSE);
+    }
+
+    if (rolling_last_message_id != 0) {
+        /* ACK HISTORY ACK */
+#if 0
+        groupme_set_room_last_id(da, channel->id, rolling_last_message_id);
+
+        if (rolling_last_message_id < last_message) {
+            /* Request the next 100 messages */
+            gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages?limit=100&after=%" G_GUINT64_FORMAT, channel->id, rolling_last_message_id);
+            groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
+            g_free(url);
+        }
+#endif
+    }
+}
+
+
 
 /* identical endpoint as above, but not rolling */
 
@@ -2273,37 +2347,60 @@ groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present)
 static void
 groupme_cmd_history(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer data) {
 
-    PurpleConnection *pc = purple_conversation_get_connection(conv);
 
+    PurpleConnection *pc = purple_conversation_get_connection(conv);
     if (pc == NULL) {
         printf("Conversation was not found.\n");
         return PURPLE_CMD_RET_FAILED;
     }
 
-    int id = purple_chat_conversation_get_id(PURPLE_CHAT_CONVERSATION(conv));
-    if (id == -1) {
-        printf("Purple chat was not found.\n");
-        return PURPLE_CMD_RET_FAILED;
-    }
-
     GroupMeAccount *da = purple_connection_get_protocol_data(pc);
+
     if (da == NULL) {
         printf("Account was not found.\n");
         return PURPLE_CMD_RET_FAILED;
     }
 
-    GroupMeGuild *channel = groupme_get_guild(da, id);
-    if (channel == NULL) {
-        printf("Channel was not found.\n");
+    if (pc->type == PURPLE_CONV_TYPE_IM) {
+        PurpleConvim *pim = PURPLE_IM_CONVERSATION(conv);
+        guint64 person_id = to_int(purple_conversation_get_name(pc));
+        if (person_id == 0) {
+            printf("Could not find other person's id.\n");
+            return PURPLE_CMD_RET_FAILED;
+        }
+        gchar *url = g_strdup_printf(
+                "https://"
+                GROUPME_API_SERVER
+                "/direct_messages?other_user_id=%"
+                G_GUINT64_FORMAT,
+                person_id);
+        groupme_fetch_url(da,
+                url, NULL, groupme_got_history_of_im, person_id);
+        g_free(url);
+    } else if (pc->type == PURPLE_CONV_TYPE_CHAT) {
+        int id = purple_chat_conversation_get_id(PURPLE_CHAT_CONVERSATION(conv));
+
+        if (id == -1) {
+            printf("Purple chat was not found.\n");
+            return PURPLE_CMD_RET_FAILED;
+        }
+
+        GroupMeGuild *channel = groupme_get_guild(da, id);
+        if (channel == NULL) {
+            printf("Channel was not found.\n");
+            return PURPLE_CMD_RET_FAILED;
+        }
+        gchar *url = g_strdup_printf(
+                "https://"
+                GROUPME_API_SERVER
+                "/groups/%" G_GUINT64_FORMAT
+                "/messages?limit=%" G_GUINT64_FORMAT, id, to_int(args[0]));
+        groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
+        g_free(url);
+    } else {
+        printf("Purple conversation type was not found.\n");
         return PURPLE_CMD_RET_FAILED;
     }
-
-    gchar *url = g_strdup_printf(
-            "https://"
-            GROUPME_API_SERVER
-            "/groups/%" G_GUINT64_FORMAT
-            "/messages?limit=%" G_GUINT64_FORMAT, id, to_int(args[0]));
-    groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
     return PURPLE_CMD_RET_OK;
 }
 
