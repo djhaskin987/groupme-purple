@@ -2109,7 +2109,7 @@ groupme_got_history_of_im(GroupMeAccount *da, JsonNode *node, gpointer user_data
 
 
     /* latest are first */
-    for (i = 0; i < len; i++) {
+    for (i = len - 1; i >= 0; i--) {
         JsonObject *message = json_array_get_object_element(messages, i);
 
         /* Direct message: either our sent message or theirs */
