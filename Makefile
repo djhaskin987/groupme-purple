@@ -25,7 +25,7 @@ else
 PLUGIN_VERSION ?= 0.9.$(shell date +%Y.%m.%d)
 endif
 
-CFLAGS    ?= -I/usr/lib64/glib-2.0/include/ -I/usr/include/glib-2.0/ -O2 -g -pipe -Wall -Wno-unused-function -Wno-unused-variable -Wno-int-conversion -Wno-discarded-qualifiers -Wno-return-type
+CFLAGS	?= -I/usr/lib64/glib-2.0/include/ -I/usr/include/glib-2.0/ -O2 -g -pipe -Wno-discarded-qualifiers
 LDFLAGS ?= -Wl,-z,relro
 
 CFLAGS  += -std=c99 -DGROUPME_PLUGIN_VERSION='"$(PLUGIN_VERSION)"'
@@ -94,59 +94,59 @@ C_FILES :=
 PURPLE_COMPAT_FILES :=
 PURPLE_C_FILES := libgroupme.c $(C_FILES)
 
-.PHONY:    all install FAILNOPURPLE clean install-icons install-locales %-locale-install
+.PHONY:	all install FAILNOPURPLE clean install-icons install-locales %-locale-install
 
 LOCALES = $(patsubst %.po, %.mo, $(wildcard po/*.po))
 
 all: $(GROUPME_TARGET)
 
 libgroupme.so: $(PURPLE_C_FILES) $(PURPLE_COMPAT_FILES)
-    $(CC) -fPIC $(CFLAGS) $(CPPFLAGS) -shared -o $@ $^ $(LDFLAGS) `$(PKG_CONFIG) purple glib-2.0 json-glib-1.0 --libs --cflags`  $(INCLUDES) -Ipurple2compat -g -ggdb
+	$(CC) -fPIC $(CFLAGS) $(CPPFLAGS) -shared -o $@ $^ $(LDFLAGS) `$(PKG_CONFIG) purple glib-2.0 json-glib-1.0 --libs --cflags`  $(INCLUDES) -Ipurple2compat -g -ggdb
 
 libgroupme3.so: $(PURPLE_C_FILES)
-    $(CC) -fPIC $(CFLAGS) $(CPPFLAGS) -shared -o $@ $^ $(LDFLAGS) `$(PKG_CONFIG) purple-3 glib-2.0 json-glib-1.0 --libs --cflags` $(INCLUDES)  -g -ggdb
+	$(CC) -fPIC $(CFLAGS) $(CPPFLAGS) -shared -o $@ $^ $(LDFLAGS) `$(PKG_CONFIG) purple-3 glib-2.0 json-glib-1.0 --libs --cflags` $(INCLUDES)  -g -ggdb
 
 libgroupme.dll: $(PURPLE_C_FILES) $(PURPLE_COMPAT_FILES)
-    $(WIN32_CC) -O0 -g -ggdb -shared -o $@ $^ $(WIN32_PIDGIN2_CFLAGS) $(WIN32_PIDGIN2_LDFLAGS) -Ipurple2compat
+	$(WIN32_CC) -O0 -g -ggdb -shared -o $@ $^ $(WIN32_PIDGIN2_CFLAGS) $(WIN32_PIDGIN2_LDFLAGS) -Ipurple2compat
 
 libgroupme3.dll: $(PURPLE_C_FILES) $(PURPLE_COMPAT_FILES)
-    $(WIN32_CC) -O0 -g -ggdb -shared -o $@ $^ $(WIN32_PIDGIN3_CFLAGS) $(WIN32_PIDGIN3_LDFLAGS)
+	$(WIN32_CC) -O0 -g -ggdb -shared -o $@ $^ $(WIN32_PIDGIN3_CFLAGS) $(WIN32_PIDGIN3_LDFLAGS)
 
 po/purple-groupme.pot: libgroupme.c
-    xgettext $^ -k_ --no-location -o $@
+	xgettext $^ -k_ --no-location -o $@
 
 po/%.po: po/purple-groupme.pot
-    msgmerge $@ po/purple-groupme.pot > tmp-$*
-    mv -f tmp-$* $@
+	msgmerge $@ po/purple-groupme.pot > tmp-$*
+	mv -f tmp-$* $@
 
 po/%.mo: po/%.po
-    msgfmt -o $@ $^
+	msgfmt -o $@ $^
 
 %-locale-install: po/%.mo
-    install -D -m $(FILE_PERM) -p po/$(*F).mo $(LOCALEDIR)/$(*F)/LC_MESSAGES/purple-groupme.mo
+	install -D -m $(FILE_PERM) -p po/$(*F).mo $(LOCALEDIR)/$(*F)/LC_MESSAGES/purple-groupme.mo
 
 install: $(GROUPME_TARGET) install-icons install-locales
-    mkdir -m $(DIR_PERM) -p $(GROUPME_DEST)
-    install -m $(LIB_PERM) -p $(GROUPME_TARGET) $(GROUPME_DEST)
+	mkdir -m $(DIR_PERM) -p $(GROUPME_DEST)
+	install -m $(LIB_PERM) -p $(GROUPME_TARGET) $(GROUPME_DEST)
 
 install-icons: groupme16.png groupme22.png groupme48.png groupme.svg
-    mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/16
-    mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/22
-    mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/48
-    mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/scalable
-    install -m $(FILE_PERM) -p groupme16.png $(GROUPME_ICONS_DEST)/16/groupme.png
-    install -m $(FILE_PERM) -p groupme22.png $(GROUPME_ICONS_DEST)/22/groupme.png
-    install -m $(FILE_PERM) -p groupme48.png $(GROUPME_ICONS_DEST)/48/groupme.png
-    install -m $(FILE_PERM) -p groupme.svg $(GROUPME_ICONS_DEST)/scalable/groupme.svg
+	mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/16
+	mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/22
+	mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/48
+	mkdir -m $(DIR_PERM) -p $(GROUPME_ICONS_DEST)/scalable
+	install -m $(FILE_PERM) -p groupme16.png $(GROUPME_ICONS_DEST)/16/groupme.png
+	install -m $(FILE_PERM) -p groupme22.png $(GROUPME_ICONS_DEST)/22/groupme.png
+	install -m $(FILE_PERM) -p groupme48.png $(GROUPME_ICONS_DEST)/48/groupme.png
+	install -m $(FILE_PERM) -p groupme.svg $(GROUPME_ICONS_DEST)/scalable/groupme.svg
 
 install-locales: $(patsubst po/%.po, %-locale-install, $(wildcard po/*.po))
 
 FAILNOPURPLE:
-    echo "You need libpurple development headers installed to be able to compile this plugin"
+	echo "You need libpurple development headers installed to be able to compile this plugin"
 
 clean:
-    rm -f $(GROUPME_TARGET)
+	rm -f $(GROUPME_TARGET)
 
 gdb:
-    gdb --args pidgin -c ~/.fake_purple -n -m
+	gdb --args pidgin -c ~/.fake_purple -n -m
 

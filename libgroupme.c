@@ -178,28 +178,29 @@ static void groupme_free_guild_membership(gpointer data);
 static GroupMeUser *
 groupme_new_user(JsonObject *json)
 {
-    GroupMeUser *user = g_new0(GroupMeUser, 1);
+    gchar* user_id = json_object_get_string_member(json, "user_id");
+    gchar* id_from_json = json_object_get_string_member(json, "id");
+    gchar* id_s = user_id ? user_id : id_from_json;
 
-    user->id_s = json_object_get_string_member(json, "user_id");
+    guint64 id = to_int(id_s);
 
-    if (!user->id_s)
-        user->id_s = json_object_get_string_member(json, "id");
+    char *name = json_object_get_string_member(json, "nickname");
+    if (!name)
+        name = json_object_get_string_member(json, "name");
 
-    user->id = to_int(user->id_s);
+    gchar* avatar = g_strdup(json_object_get_string_member(json, "image_url"));
 
-    user->name = json_object_get_string_member(json, "nickname");
-
-    if (!user->name)
-        user->name = json_object_get_string_member(json, "name");
-
-    user->avatar = g_strdup(json_object_get_string_member(json, "image_url"));
-
-    user->name = g_strdup(user->name);
-    user->id_s = g_strdup(user->id_s);
-
-    user->guild_memberships = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild_membership);
-
-    return user;
+    name = g_strdup(name);
+    id_s = g_strdup(id_s);
+    const GroupMeUser new_user = {
+        id,
+        id_s,
+        name,
+        avatar,
+        g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild_membership),
+        FALSE
+    };
+    return g_memdup(&new_user, sizeof(GroupMeUser));
 }
 
 static GroupMeGuild *
@@ -901,6 +902,8 @@ bail:
 
 static guint64
 groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gboolean is_dm)
+
+
 {
     const gchar *guid = json_object_get_string_member(data, "source_guid");
     guint64 author_id = to_int(json_object_get_string_member(data, "sender_id"));
@@ -918,10 +921,12 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
     gchar *tmp;
     gint i;
 
+    printf("Made it this far\n");
+
     /* Drop our own messages that were pinged back to us */
     if (author_id == da->self_user_id) {
         g_hash_table_remove(da->sent_message_ids, guid);
-        return;
+        return 0;
     }
 
     if (author_id == da->self_user_id && is_dm) {
@@ -931,6 +936,7 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
     }
 
     if (is_dm) {
+
         /* private message */
 
         if (author_id == da->self_user_id) {
@@ -2097,31 +2103,29 @@ groupme_got_history_of_im(GroupMeAccount *da, JsonNode *node, gpointer user_data
     JsonObject *resp = json_object_get_object_member(container, "response");
     JsonArray *messages = json_object_get_array_member(resp, "direct_messages");
 
-    GroupMeGuild *channel = user_data;
     gint i, len = json_array_get_length(messages);
     guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
     guint64 rolling_last_message_id = 0;
 
+
     /* latest are first */
-    for (i = 0; i < len; i--) {
+    for (i = 0; i < len; i++) {
         JsonObject *message = json_array_get_object_element(messages, i);
-        rolling_last_message_id = groupme_process_message(da, channel->id, message, FALSE);
-    }
 
-    if (rolling_last_message_id != 0) {
-        /* ACK HISTORY ACK */
-#if 0
-        groupme_set_room_last_id(da, channel->id, rolling_last_message_id);
+        /* Direct message: either our sent message or theirs */
+        int sid = to_int(json_object_get_string_member(message, "user_id"));
+        int rid = to_int(json_object_get_string_member(message, "recipient_id"));
+        printf("sid: %d\n", sid);
+        printf("rid: %d\n", rid);
 
-        if (rolling_last_message_id < last_message) {
-            /* Request the next 100 messages */
-            gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages?limit=100&after=%" G_GUINT64_FORMAT, channel->id, rolling_last_message_id);
-            groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
-            g_free(url);
-        }
-#endif
+        /* Sometimes we receive our own messages, account for that */
+        int channel = sid == da->self_user_id ? rid : sid;
+        printf("channel: %d\n", channel);
+
+        rolling_last_message_id = groupme_process_message(da, channel, message, TRUE);
     }
 }
+
 static void
 groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
@@ -2162,51 +2166,6 @@ groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_da
 #endif
     }
 }
-
-groupme_got_history_of_in(GroupMeAccount *da, JsonNode *node, gpointer user_data)
-{
-    JsonObject *container = json_node_get_object(node);
-    JsonObject *resp = json_object_get_object_member(container, "response");
-    JsonArray *messages = json_object_get_array_member(resp, "messages");
-
-    GroupMeGuild *channel = user_data;
-    gint i, len = json_array_get_length(messages);
-    guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
-    guint64 rolling_last_message_id = 0;
-
-    /* latest are first */
-    for (i = len - 1; i >= 0; i--) {
-        JsonObject *message = json_array_get_object_element(messages, i);
-#if 0
-        guint64 id = to_int(json_object_get_string_member(message, "id"));
-
-        if (id >= last_message) {
-            break;
-        }
-
-#endif
-        rolling_last_message_id = groupme_process_message(da, channel->id, message, FALSE);
-    }
-
-    if (rolling_last_message_id != 0) {
-        /* ACK HISTORY ACK */
-#if 0
-        groupme_set_room_last_id(da, channel->id, rolling_last_message_id);
-
-        if (rolling_last_message_id < last_message) {
-            /* Request the next 100 messages */
-            gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages?limit=100&after=%" G_GUINT64_FORMAT, channel->id, rolling_last_message_id);
-            groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
-            g_free(url);
-        }
-#endif
-    }
-}
-
-
-
-/* identical endpoint as above, but not rolling */
-
 static void
 groupme_got_history_static(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
@@ -2344,7 +2303,7 @@ groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present)
     return channel;
 }
 
-static void
+static PurpleCmdRet
 groupme_cmd_history(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer data) {
 
 
@@ -2361,9 +2320,9 @@ groupme_cmd_history(PurpleConversation *conv, const gchar *cmd, gchar **args, gc
         return PURPLE_CMD_RET_FAILED;
     }
 
-    if (pc->type == PURPLE_CONV_TYPE_IM) {
-        PurpleConvim *pim = PURPLE_IM_CONVERSATION(conv);
-        guint64 person_id = to_int(purple_conversation_get_name(pc));
+    if (conv->type == PURPLE_CONV_TYPE_IM) {
+        PurpleConvIm *pim = PURPLE_IM_CONVERSATION(conv);
+        guint64 person_id = to_int(purple_conversation_get_name(conv));
         if (person_id == 0) {
             printf("Could not find other person's id.\n");
             return PURPLE_CMD_RET_FAILED;
@@ -2375,9 +2334,9 @@ groupme_cmd_history(PurpleConversation *conv, const gchar *cmd, gchar **args, gc
                 G_GUINT64_FORMAT,
                 person_id);
         groupme_fetch_url(da,
-                url, NULL, groupme_got_history_of_im, person_id);
+                url, NULL, groupme_got_history_of_im, NULL);
         g_free(url);
-    } else if (pc->type == PURPLE_CONV_TYPE_CHAT) {
+    } else if (conv->type == PURPLE_CONV_TYPE_CHAT) {
         int id = purple_chat_conversation_get_id(PURPLE_CHAT_CONVERSATION(conv));
 
         if (id == -1) {
