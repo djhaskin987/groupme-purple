@@ -25,7 +25,7 @@
 #define json_object_get_int_member(JSON_OBJECT, MEMBER) \
 	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_int_member(JSON_OBJECT, MEMBER) : 0)
 #define json_object_get_string_member(JSON_OBJECT, MEMBER) \
-	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_string_member(JSON_OBJECT, MEMBER) : ((gchar*)NULL))
+	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_string_member(JSON_OBJECT, MEMBER) : NULL)
 #define json_object_get_array_member(JSON_OBJECT, MEMBER) \
 	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_array_member(JSON_OBJECT, MEMBER) : NULL)
 #define json_object_get_object_member(JSON_OBJECT, MEMBER) \
