@@ -2097,15 +2097,20 @@ groupme_got_history_of_im(GroupMeAccount *da, JsonNode *node, gpointer user_data
     JsonObject *resp = json_object_get_object_member(container, "response");
     JsonArray *messages = json_object_get_array_member(resp, "direct_messages");
 
-    GroupMeGuild *channel = user_data;
     gint i, len = json_array_get_length(messages);
     guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
     guint64 rolling_last_message_id = 0;
 
     /* latest are first */
-    for (i = 0; i < len; i--) {
+    for (i = len - 1; i >= 0; i--) {
         JsonObject *message = json_array_get_object_element(messages, i);
-        rolling_last_message_id = groupme_process_message(da, channel->id, message, FALSE);
+        /* Direct message: either our sent message or theirs */
+        int sid = to_int(json_object_get_string_member(message, "sender_id"));
+        int rid = to_int(json_object_get_string_member(message, "recipient_id"));
+
+        /* Sometimes we receive our own messages, account for that */
+        int channel = sid == da->self_user_id ? rid : sid;
+        rolling_last_message_id = groupme_process_message(da, channel, message, TRUE);
     }
 
     if (rolling_last_message_id != 0) {
