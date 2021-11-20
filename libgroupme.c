@@ -801,7 +801,7 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
 #ifdef USE_LONG_POLL
     /* Long polling consists of repeated reqeusts to the push server */
-    groupme_init_push(da);
+    //groupme_init_push(da);
 #endif
 }
 
@@ -3087,6 +3087,12 @@ libpurple2_plugin_unload(PurplePlugin *plugin)
 }
 
 static void
+groupme_keepalive(PurpleConnection *conn){
+    GroupMeAccount *da = purple_connection_get_protocol_data(conn);
+    groupme_init_push(da);
+}
+
+static void
 plugin_init(PurplePlugin *plugin)
 {
 
@@ -3128,6 +3134,7 @@ plugin_init(PurplePlugin *plugin)
     prpl_info->chat_info = groupme_chat_info;
     prpl_info->chat_info_defaults = groupme_chat_info_defaults;
     prpl_info->login = groupme_login;
+
     prpl_info->close = groupme_close;
     prpl_info->send_im = groupme_send_im;
     prpl_info->send_typing = groupme_send_typing;
@@ -3136,6 +3143,8 @@ plugin_init(PurplePlugin *plugin)
     prpl_info->find_blist_chat = groupme_find_chat;
     prpl_info->chat_invite = groupme_chat_invite;
     prpl_info->chat_send = groupme_chat_send;
+    prpl_info->keepalive = groupme_keepalive;
+
     prpl_info->set_chat_topic = groupme_chat_set_topic;
     prpl_info->get_cb_real_name = groupme_get_real_name;
     prpl_info->get_info = groupme_get_info;
