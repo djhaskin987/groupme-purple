@@ -762,9 +762,27 @@ static void
 groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
     purple_debug_info("groupme", "Got push %d\n", (da->push_id - 1));
+    if (node == NULL) {
+        printf("Null node. Hoo-haa!\n");
+        purple_connection_error(da->pc,
+                PURPLE_CONNECTION_ERROR_NETWORK_ERROR, "Got a push, but no data");
+        return;
+    }
+
+    // https://stackoverflow.com/a/26972452/850326
+    // Get the JSON and print it out to the debug window
+    //JsonGenerator *gen = json_generator_new();
+    //json_generator_set_root(gen, node);
+    //gsize data_length = 0UL;
+    //char *data = json_generator_to_data(gen, &data_length);
+    //purple_debug_info("groupme", "Got push JSON: %s\n", data);
+    //g_unref(gen);
+    //g_free(data);
+
     JsonArray *subscriptions = json_node_get_array(node);
 
     guint len = json_array_get_length(subscriptions);
+
 
     for (int i = len - 1; i >= 0; i--) {
         JsonObject *sub = json_array_get_object_element(subscriptions, i);
@@ -803,7 +821,7 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
 #ifdef USE_LONG_POLL
     /* Long polling consists of repeated reqeusts to the push server */
-    //groupme_init_push(da);
+    groupme_init_push(da);
 #endif
 }
 
@@ -1853,7 +1871,7 @@ groupme_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInp
 
     g_free(websocket_header);
 
-    groupme_init_push(da);
+    //groupme_init_push(da);
 }
 
 static void
@@ -1890,7 +1908,7 @@ groupme_start_socket(GroupMeAccount *da)
 		purple_timeout_remove(da->long_poller);
 		da->long_poller = 0;
     }
-	da->long_poller = purple_timeout_add_seconds(60, long_poll, da);
+	//da->long_poller = purple_timeout_add_seconds(60, long_poll, da);
     groupme_init_push(da);
     return;
 #endif
