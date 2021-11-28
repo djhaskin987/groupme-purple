@@ -59,7 +59,8 @@
 #define GROUPME_GATEWAY_SERVER_PATH "/faye"
 
 /* TODO: Websockets */
-#define USE_LONG_POLL
+/* #define USE_LONG_POLL */
+#define USE_WEB_SOCKETS
 
 #ifdef USE_LONG_POLL
 #define GROUPME_PUSH_TYPE "long-polling"
@@ -593,6 +594,7 @@ groupme_response_callback(PurpleHttpConnection *http_conn,
     }
 
     if (body != NULL && !json_parser_load_from_data(parser, body, body_len, NULL)) {
+        purple_debug_info("groupme", "Unparseable body\n");
         if (conn->callback) {
             JsonNode *dummy_node = json_node_new(JSON_NODE_OBJECT);
             JsonObject *dummy_object = json_object_new();
@@ -769,15 +771,15 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
         return;
     }
 
-    // https://stackoverflow.com/a/26972452/850326
-    // Get the JSON and print it out to the debug window
-    //JsonGenerator *gen = json_generator_new();
-    //json_generator_set_root(gen, node);
-    //gsize data_length = 0UL;
-    //char *data = json_generator_to_data(gen, &data_length);
-    //purple_debug_info("groupme", "Got push JSON: %s\n", data);
-    //g_unref(gen);
-    //g_free(data);
+    if (JSON_NODE_HOLDS_OBJECT(node)) {
+        JsonObject *maybe_dummy = json_node_get_object(node);
+        if (json_object_has_member(maybe_dummy, "body")) {
+            purple_debug_info("groupme", "Unexpected response: %s\n", json_object_get_string_member(maybe_dummy, "body"));
+        }
+        purple_connection_error(da->pc,
+                PURPLE_CONNECTION_ERROR_NETWORK_ERROR, "Got a push, but data is unparseable.");
+        return;
+    }
 
     JsonArray *subscriptions = json_node_get_array(node);
 
@@ -838,9 +840,11 @@ groupme_init_push(GroupMeAccount *da)
     json_object_set_string_member(data, "id", id);
 
     purple_debug_info("groupme", "Sending push %s\n", id);
+#ifdef USE_LONG_POLL
     groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, json_object_to_string(data), groupme_got_push, NULL);
-    //groupme_socket_write_json(da, data);
-
+#else
+    groupme_socket_write_json(da, data);
+#endif
     json_object_unref(data);
     g_free(id);
 }
@@ -1570,7 +1574,6 @@ groupme_process_frame(GroupMeAccount *da, const gchar *frame)
     JsonParser *parser = json_parser_new();
     JsonNode *root;
     gint64 opcode;
-    printf("process frame!\n");
 
     purple_debug_info("groupme", "got frame data: %s\n", frame);
 
@@ -1582,9 +1585,8 @@ groupme_process_frame(GroupMeAccount *da, const gchar *frame)
     root = json_parser_get_root(parser);
 
     if (root != NULL) {
-        JsonObject *obj = json_node_get_object(root);
-
-        printf("TODO: Wire up websocket\n");
+        //JsonObject *obj = json_node_get_object(root);
+        groupme_got_push(da, root, NULL);
     }
 
     g_object_unref(parser);
@@ -1871,7 +1873,7 @@ groupme_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInp
 
     g_free(websocket_header);
 
-    //groupme_init_push(da);
+    groupme_init_push(da);
 }
 
 static void
@@ -2452,12 +2454,10 @@ groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 static void
 groupme_mark_room_messages_read(GroupMeAccount *da, guint64 channel_id)
 {
+#if 0
     if (!channel_id) {
         return;
     }
-
-    printf("XXX: TODO mark room messages\n");
-#if 0
 
     GroupMeChannel *channel = groupme_get_channel_global_int(da, channel_id);
 
