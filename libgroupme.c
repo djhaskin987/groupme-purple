@@ -122,6 +122,7 @@ typedef struct {
 
     gint64 seq; /* incrementing counter */
     guint heartbeat_timeout;
+    guint long_poller;
 
     GHashTable *one_to_ones;        /* A store of known room_id's -> username's */
     GHashTable *one_to_ones_rev;    /* A store of known usernames's -> room_id's */
@@ -729,7 +730,7 @@ groupme_fetch_url_with_method(GroupMeAccount *ya, const gchar *method, const gch
     g_free(user);
     g_free(password);
 
-    http_conn = purple_util_fetch_url_request_len_with_account(ya->account, url, FALSE, GROUPME_USERAGENT, TRUE, headers->str, TRUE, 6553500, groupme_response_callback, conn);
+    http_conn = purple_util_fetch_url_request_len_with_account(ya->account, url, TRUE, GROUPME_USERAGENT, TRUE, headers->str, TRUE, 6553500, groupme_response_callback, conn);
 
     if (http_conn != NULL) {
         ya->http_conns = g_slist_prepend(ya->http_conns, http_conn);
@@ -760,6 +761,7 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 static void
 groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
+    purple_debug_info("groupme", "Got push %d\n", (da->push_id - 1));
     JsonArray *subscriptions = json_node_get_array(node);
 
     guint len = json_array_get_length(subscriptions);
@@ -817,6 +819,7 @@ groupme_init_push(GroupMeAccount *da)
     gchar *id = from_int(da->push_id++);
     json_object_set_string_member(data, "id", id);
 
+    purple_debug_info("groupme", "Sending push %s\n", id);
     groupme_fetch_url(da, "https://" GROUPME_PUSH_SERVER, json_object_to_string(data), groupme_got_push, NULL);
     //groupme_socket_write_json(da, data);
 
@@ -1316,6 +1319,16 @@ groupme_got_self(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
     JsonObject *container = json_node_get_object(node);
     JsonObject *resp = json_object_get_object_member(container, "response");
+    if (json_object_has_member(container, "meta")) {
+        JsonObject *meta = json_object_get_object_member(container, "meta");
+        if (json_object_has_member(meta, "code")) {
+            guint code = json_object_get_int_member(meta, "code");
+            if (code == 401) {
+                purple_connection_error(da->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, json_object_get_string_member(meta, "errors"));
+                return;
+            }
+        }
+    }
 
     da->self_user_id = to_int(json_object_get_string_member(resp, "id"));
     da->self_username = g_strdup(json_object_get_string_member(resp, "name"));
@@ -1364,6 +1377,7 @@ groupme_login_response(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
     if (node != NULL) {
         JsonObject *response = json_node_get_object(node);
+
 
         da->token = g_strdup(json_object_get_string_member(response, "token"));
 
@@ -1473,6 +1487,11 @@ groupme_close(PurpleConnection *pc)
 
     if (da->heartbeat_timeout) {
         g_source_remove(da->heartbeat_timeout);
+    }
+    
+    if (da->long_poller) {
+		purple_timeout_remove(da->long_poller);
+		da->long_poller = 0;
     }
 
     if (da->websocket != NULL) {
@@ -1852,10 +1871,26 @@ groupme_socket_failed(PurpleSslConnection *conn, PurpleSslErrorType errortype, g
     }
 }
 
+static gboolean long_poll(gpointer data) {
+    GroupMeAccount *da = (GroupMeAccount*) data;
+    groupme_init_push(da);
+    return TRUE;
+}
+
 static void
 groupme_start_socket(GroupMeAccount *da)
 {
 #ifdef USE_LONG_POLL
+    /* Set to the empircal timeout for the push server.
+     * Hack, maybe? Or is this just what one does? I don't know. Please help!
+     * I have no idea what I'm doing.
+     * -- Dan Haskin, 11/27/2021
+     */
+    if (da->long_poller) {
+		purple_timeout_remove(da->long_poller);
+		da->long_poller = 0;
+    }
+	da->long_poller = purple_timeout_add_seconds(60, long_poll, da);
     groupme_init_push(da);
     return;
 #endif
@@ -3087,12 +3122,6 @@ libpurple2_plugin_unload(PurplePlugin *plugin)
 }
 
 static void
-groupme_keepalive(PurpleConnection *conn){
-    GroupMeAccount *da = purple_connection_get_protocol_data(conn);
-    groupme_init_push(da);
-}
-
-static void
 plugin_init(PurplePlugin *plugin)
 {
 
@@ -3143,7 +3172,7 @@ plugin_init(PurplePlugin *plugin)
     prpl_info->find_blist_chat = groupme_find_chat;
     prpl_info->chat_invite = groupme_chat_invite;
     prpl_info->chat_send = groupme_chat_send;
-    prpl_info->keepalive = groupme_keepalive;
+    //prpl_info->keepalive = groupme_keepalive;
 
     prpl_info->set_chat_topic = groupme_chat_set_topic;
     prpl_info->get_cb_real_name = groupme_get_real_name;
