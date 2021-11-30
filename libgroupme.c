@@ -1612,7 +1612,7 @@ groupme_socket_write_data(GroupMeAccount *ya, guchar *data, gsize data_len, guch
     guchar mkey[4] = { 0x12, 0x34, 0x56, 0x78 };
 
     if (data_len) {
-        purple_debug_info("groupme", "sending frame: %s\n", (int) data_len, data);
+        purple_debug_info("groupme", "Sending frame: %*s\n", (int) data_len, data);
 
     }
 
@@ -1769,6 +1769,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                     if (ping_frame_len) {
                         guchar *pong_data = g_new0(guchar, ping_frame_len);
                         purple_ssl_read(conn, pong_data, ping_frame_len);
+                        purple_debug_info("groupme", "Got a ping frame with pong data: %s\n", pong_data);
 
                         groupme_socket_write_data(ya, pong_data, ping_frame_len, 138);
                         g_free(pong_data);
@@ -1815,6 +1816,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
         } while (read_len > 0 && ya->frame_len_progress < ya->frame_len);
 
         if(current_progress == ya->frame_len_progress) {
+            purple_debug_info("groupme", "No bytes read into frame\n");
             break;
         }
 
