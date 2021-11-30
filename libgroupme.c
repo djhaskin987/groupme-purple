@@ -1772,8 +1772,14 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                         purple_debug_info("groupme", "Got a ping frame with pong data: %s\n", pong_data);
 
                         groupme_socket_write_data(ya, pong_data, ping_frame_len, 138);
-                        if (to_int(pong_data) >= 300) {
+                        if (to_int(pong_data) >= 120) {
                             /* Total hack.
+                             * GroupMe keeps sending ping packets, but
+                             * doesn't actually keep sending data
+                             * sometimes. I can't figure it out.
+                             * In the mean time, a frame is sent
+                             * (emprically) once every ten seconds,
+                             * so reconnect after 20 minutes
                              * It's been a while, try reconnect */
                             purple_debug_info("groupme", "Attempting reconnect after 300th ping\n", pong_data);
                             groupme_start_socket(ya);
