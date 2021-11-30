@@ -944,10 +944,8 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
     gint i;
 
     /* Drop our own messages that were pinged back to us */
-    if (author_id == da->self_user_id) {
-        g_hash_table_remove(da->sent_message_ids, guid);
-        return;
-    }
+	if ((author_id == da->self_user_id) && g_hash_table_remove(da->sent_message_ids, guid))
+		return;
 
     if (author_id == da->self_user_id && is_dm) {
         flags = PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED;
@@ -1614,7 +1612,8 @@ groupme_socket_write_data(GroupMeAccount *ya, guchar *data, gsize data_len, guch
     guchar mkey[4] = { 0x12, 0x34, 0x56, 0x78 };
 
     if (data_len) {
-        purple_debug_info("groupme", "sending frame: %*s\n", (int) data_len, data);
+        purple_debug_info("groupme", "sending frame: %s\n", (int) data_len, data);
+
     }
 
     data = groupme_websocket_mask(mkey, data, data_len);
@@ -1805,6 +1804,8 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
             ya->frame_len_progress = 0;
         }
 
+        guint64 current_progress = ya->frame_len_progress;
+
         do {
             read_len = purple_ssl_read(conn, ya->frame + ya->frame_len_progress, ya->frame_len - ya->frame_len_progress);
 
@@ -1812,6 +1813,10 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                 ya->frame_len_progress += read_len;
             }
         } while (read_len > 0 && ya->frame_len_progress < ya->frame_len);
+
+        if(current_progress == ya->frame_len_progress) {
+            break;
+        }
 
         done_some_reads = TRUE;
 
