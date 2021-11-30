@@ -1775,6 +1775,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                         if (to_int(pong_data) >= 300) {
                             /* Total hack.
                              * It's been a while, try reconnect */
+                            purple_debug_info("groupme", "Attempting reconnect after 300th ping\n", pong_data);
                             groupme_start_socket(ya);
                         }
                         g_free(pong_data);
