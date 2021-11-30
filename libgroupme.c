@@ -1772,6 +1772,11 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                         purple_debug_info("groupme", "Got a ping frame with pong data: %s\n", pong_data);
 
                         groupme_socket_write_data(ya, pong_data, ping_frame_len, 138);
+                        if (to_int(pong_data) >= 300) {
+                            /* Total hack.
+                             * It's been a while, try reconnect */
+                            groupme_start_socket(ya);
+                        }
                         g_free(pong_data);
                     } else {
                         groupme_socket_write_data(ya, (guchar *) "", 0, 138);
