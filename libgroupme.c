@@ -1783,9 +1783,10 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                         purple_debug_info("groupme", "Got a ping frame with pong data: %s\n", pong_data);
 
                         groupme_socket_write_data(ya, pong_data, ping_frame_len, 138);
-                        if (to_int(pong_data) % 6 == 0) {
+                        guint64 pong_data_number = to_int(pong_data);
+                        if (pong_data_number != 0 && pong_data_number % 6 == 0) {
                             /* Hack-ish.
-                             * Try to send a ping frame every 6 frames sent.
+                             * Try sending an in-protocol ping every 6 frames sent.
                              */
                             JsonObject *ping_object = json_object_new();
 
@@ -1805,16 +1806,16 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                             json_object_unref(ping_object);
                             g_free(channel);
                         }
-                        if (to_int(pong_data) >= 120) {
+                        if (pong_data_number >= 10) {
                             /* Total hack.
                              * GroupMe keeps sending ping ws frames, but
                              * doesn't actually keep sending data
                              * sometimes. I can't figure it out.
                              * In the mean time, a frame is sent
                              * (emprically) once every ten seconds,
-                             * so reconnect after 20 minutes
+                             * so reconnect after 10 minutes
                              * It's been a while, try reconnect */
-                            purple_debug_info("groupme", "Attempting reconnect after 120th ping\n", pong_data);
+                            purple_debug_info("groupme", "Attempting reconnect after 60th ping\n", pong_data);
                             groupme_fetch_url(ya, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
                         }
                         g_free(pong_data);
