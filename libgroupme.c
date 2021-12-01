@@ -797,11 +797,15 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
         const gchar *type = json_object_get_string_member(data, "type");
 
-        if (g_strcmp0(type, "ping") == 0) {
-            json_object_set_string_member(sub, "clientId", da->client_id);
-            groupme_socket_write_json(da, sub);
-            continue;
-        }
+        //if (g_strcmp0(type, "ping") == 0) {
+            // This stuff isn't working
+            //json_object_remove_member(sub, "authenticated");
+            //json_object_remove_member(sub, "authenticated");
+
+            //json_object_set_boolean_member(sub, "successful", TRUE);
+            //groupme_socket_write_json(da, sub);
+            //continue;
+        //}
 
         if (!json_object_has_member(data, "subject"))
             continue;
@@ -1779,9 +1783,31 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                         purple_debug_info("groupme", "Got a ping frame with pong data: %s\n", pong_data);
 
                         groupme_socket_write_data(ya, pong_data, ping_frame_len, 138);
+                        if (to_int(pong_data) % 6 == 0) {
+                            /* Hack-ish.
+                             * Try to send a ping frame every 6 frames sent.
+                             */
+                            JsonObject *ping_object = json_object_new();
+
+                            JsonObject *data_object = json_object_new();
+                            gchar *channel = g_strdup_printf("/user/%" G_GUINT64_FORMAT,
+                                    ya->self_user_id);
+                            json_object_set_string_member(ping_object, "channel", channel);
+                            json_object_set_string_member(data_object, "type", "ping");
+                            json_object_set_object_member(ping_object, "data", data_object);
+                            json_object_set_string_member(ping_object, "clientId",
+                                    ya->client_id);
+                            json_object_set_string_member(ping_object, "id", pong_data);
+                            json_object_set_boolean_member(ping_object, "authenticated", TRUE);
+
+                            groupme_socket_write_json(ya, ping_object);
+                            json_object_unref(data_object);
+                            json_object_unref(ping_object);
+                            g_free(channel);
+                        }
                         if (to_int(pong_data) >= 120) {
                             /* Total hack.
-                             * GroupMe keeps sending ping packets, but
+                             * GroupMe keeps sending ping ws frames, but
                              * doesn't actually keep sending data
                              * sometimes. I can't figure it out.
                              * In the mean time, a frame is sent
