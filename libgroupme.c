@@ -795,12 +795,19 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
         JsonObject *data = json_object_get_object_member(sub, "data");
 
+        const gchar *type = json_object_get_string_member(data, "type");
+
+        if (g_strcmp0(type, "ping") == 0) {
+            json_object_set_string_member(sub, "clientId", da->client_id);
+            groupme_socket_write_json(da, sub);
+            continue;
+        }
+
         if (!json_object_has_member(data, "subject"))
             continue;
 
         JsonObject *subj = json_object_get_object_member(data, "subject");
 
-        const gchar *type = json_object_get_string_member(data, "type");
 
         if (g_strcmp0(type, "line.create") == 0) {
             /* Incoming message */
@@ -1746,7 +1753,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                     }
 
                     /* Try reconnect */
-                    groupme_start_socket(ya);
+                    groupme_fetch_url(ya, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
 
                     return;
                 } else if (ya->packet_code == 137) {
@@ -1781,8 +1788,8 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                              * (emprically) once every ten seconds,
                              * so reconnect after 20 minutes
                              * It's been a while, try reconnect */
-                            purple_debug_info("groupme", "Attempting reconnect after 300th ping\n", pong_data);
-                            groupme_start_socket(ya);
+                            purple_debug_info("groupme", "Attempting reconnect after 120th ping\n", pong_data);
+                            groupme_fetch_url(ya, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
                         }
                         g_free(pong_data);
                     } else {
@@ -1861,7 +1868,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
             purple_connection_error(ya->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Lost connection to server"));
         } else {
             /* Try reconnect */
-            groupme_start_socket(ya);
+            groupme_fetch_url(ya, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
         }
     }
 }
