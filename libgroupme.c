@@ -1806,7 +1806,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                             json_object_unref(ping_object);
                             g_free(channel);
                         }
-                        if (pong_data_number >= 10) {
+                        if (pong_data_number >= 57) {
                             /* Total hack.
                              * GroupMe keeps sending ping ws frames, but
                              * doesn't actually keep sending data
@@ -1814,8 +1814,17 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                              * In the mean time, a frame is sent
                              * (emprically) once every ten seconds,
                              * so reconnect after 10 minutes
-                             * It's been a while, try reconnect */
-                            purple_debug_info("groupme", "Attempting reconnect after 60th ping\n", pong_data);
+                             * It's been a while, try reconnect
+                             * UPDATE
+                             * NOT a total hack. apparently it's "normal" for
+                             * groupme to disconnect after 10 minutes.
+                             * https://groups.google.com/g/groupme-api-support/c/KKK6AWNRK98/m/sTYFE7yrBAAJ
+                             * So I should do this anyways.
+                             * However, the first thirty seconds are dicey, so I
+                             * subtract 3 from the number of frames (60) in 10
+                             * minutes.
+                             */
+                            purple_debug_info("groupme", "Attempting reconnect after 57th ping\n", pong_data);
                             groupme_fetch_url(ya, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
                         }
                         g_free(pong_data);
