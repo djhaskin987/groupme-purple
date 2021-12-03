@@ -1747,7 +1747,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
                     }
 
                     /* Try reconnect */
-                    groupme_fetch_url(ya, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
+                    groupme_start_socket(ya);
 
                     return;
                 } else if (ya->packet_code == 137) {
@@ -1894,7 +1894,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
             purple_connection_error(ya->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Lost connection to server"));
         } else {
             /* Try reconnect */
-            groupme_fetch_url(ya, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
+            groupme_start_socket(ya);
         }
     }
 }
