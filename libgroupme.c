@@ -194,7 +194,7 @@ groupme_new_user(JsonObject *json)
     if (!user->name)
         user->name = json_object_get_string_member(json, "name");
 
-    user->avatar = g_strdup(json_object_get_string_member(json, "image_url"));
+    user->avatar = g_strdup(json_object_get_string_member(json, "avatar_url"));
 
     user->name = g_strdup(user->name);
     user->id_s = g_strdup(user->id_s);
@@ -796,16 +796,6 @@ groupme_got_push(GroupMeAccount *da, JsonNode *node, gpointer user_data)
         JsonObject *data = json_object_get_object_member(sub, "data");
 
         const gchar *type = json_object_get_string_member(data, "type");
-
-        //if (g_strcmp0(type, "ping") == 0) {
-            // This stuff isn't working
-            //json_object_remove_member(sub, "authenticated");
-            //json_object_remove_member(sub, "authenticated");
-
-            //json_object_set_boolean_member(sub, "successful", TRUE);
-            //groupme_socket_write_json(da, sub);
-            //continue;
-        //}
 
         if (!json_object_has_member(data, "subject"))
             continue;
