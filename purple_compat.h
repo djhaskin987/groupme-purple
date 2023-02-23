@@ -187,4 +187,5 @@ purple_message_destroy(PurpleMessage *message)
 #define PURPLE_TYPE_STRING G_TYPE_STRING
 //TODO remove this when dx adds this to the PurpleMessageFlags enum
 #define PURPLE_MESSAGE_REMOTE_SEND 0x10000
+#include <libpurple/util.h>
 #endif
