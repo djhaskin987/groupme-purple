@@ -1,4 +1,4 @@
-# GROUPME PIDGIN PLUGIN
+# GroupMe Pidgin Plugin
 
 This is a fork of https://notabug.org/alyssa/groupme-purple . I added some
 icons, fixed the timestamps on messages so they displayed properly, and
