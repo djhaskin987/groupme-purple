@@ -18,8 +18,15 @@ Visit the "Release" page to get the following files:
   - Put `groupme22.png` in `C:\Program Files (x86)\Pidgin\pixmaps\pidgin\protocols\22\groupme.png`
   - Put `groupme48.png` in `C:\Program Files (x86)\Pidgin\pixmaps\pidgin\protocols\48\groupme.png`
 
+
+## Get It To Work On Linux
+
 For Linux, just make sure you have the development files for purple/pidgin installed, and run make; sudo make install :)
 
+## Acknowledgements
+
+Thanks to the legendary Alyssa Rosenzweig for writing this in the first place.
+I never would have figured it out.
 
 Thanks to the [facebook plugin][fp] author for the Windows json-glib DLL and
 instructions for how to compile against json-glib :)
