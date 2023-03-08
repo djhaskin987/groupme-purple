@@ -5,13 +5,14 @@ icons, fixed the timestamps on messages so they displayed properly, and
 generally just changed stuff till it worked. I'm using it actively right now,
 so hit me up if there's a bug and I'll try to fix it.
 
-To use it, just go to dev.groupme.com, log in with your groupme creds, and
-get your access token from the top right of the page. That's going to be your
-password when you use this pidgin plugin.
 
 Works well enough for me :)
 
 ## Usage Notes
+
+- To use it, just go to dev.groupme.com, log in with your groupme creds, and
+  get your access token from the top right of the page. That's going to be your
+  password when you use this pidgin plugin.
 
 - Plugin plugin currently doesn't know how to make "nice" usernames. I get
   around this by double-clicking on someone's name from a group chat, and when
