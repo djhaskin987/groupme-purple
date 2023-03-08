@@ -11,20 +11,17 @@ Works well enough for me :)
 
 ## Get It To Work on Windows
 
-Download the DLL from the "Releases" page. 
+Visit the "Release" page to get the following files:
+  - Put `libjson-glib-1.0.dll` in `C:\Program Files (x86)\Pidgin`
+  - Put `libgroupme.dll` in `C:\Program Files (x86)\Pidgin\plugins`
+  - Put `groupme16.png` in `C:\Program Files (x86)\Pidgin\pixmaps\pidgin\protocols\16\groupme.png`
+  - Put `groupme22.png` in `C:\Program Files (x86)\Pidgin\pixmaps\pidgin\protocols\22\groupme.png`
+  - Put `groupme48.png` in `C:\Program Files (x86)\Pidgin\pixmaps\pidgin\protocols\48\groupme.png`
 
-Then follow the same directions as is used for the [Facebook Plugin][fp]:
+For Linux, just make sure you have the development files for purple/pidgin installed, and run make; sudo make install :)
 
 
-> 1. Download [libjson-glib-1.0.dll][dl1] to `C:\Program Files\Pidgin`
-> 2. Download [libfacebook.dll][dl2] to `C:\Program Files\Pidgin\plugins` (note: new url as of 2019)
-> 3. See: [Basic Usage](Home#basic-usage)
-> 
-> Notes:
->   - `Program Files` will be `Program Files (x86)` on 64-bit Windows.
->   - The `libfacebook.dll` above is an [automated][l1] build.
-> 
+Thanks to the [facebook plugin][fp] author for the Windows json-glib DLL and
+instructions for how to compile against json-glib :)
+
 [fp]: https://github.com/dequis/purple-facebook/wiki/Installing-on-Windows
-[dl1]: https://github.com/dequis/purple-facebook/releases/download/downloads/libjson-glib-1.0.dll
-[dl2]: https://dequis.org/libfacebook.dll
-[l1]: https://travis-ci.org/dequis/purple-facebook
