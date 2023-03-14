@@ -127,7 +127,7 @@ typedef struct {
 
     GHashTable *one_to_ones;        /* A store of known room_id's -> username's */
     GHashTable *one_to_ones_rev;    /* A store of known usernames's -> room_id's */
-    //GHashTable *last_message_id_dm; /* A store of known room_id's -> last_message_id's */
+    GHashTable *last_message_id_dm; /* A store of known room_id's -> last_message_id's */
     GHashTable *sent_message_ids;   /* A store of message id's that we generated from this instance */
     GHashTable *result_callbacks;   /* Result ID -> Callback function */
     GQueue *received_message_queue; /* A store of the last 10 received message id's for de-dup */
@@ -1473,7 +1473,7 @@ groupme_login(PurpleAccount *account)
 
     da->one_to_ones = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
     da->one_to_ones_rev = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-    //da->last_message_id_dm = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+    da->last_message_id_dm = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
     da->sent_message_ids = g_hash_table_new_full(g_str_insensitive_hash, g_str_insensitive_equal, g_free, NULL);
     da->result_callbacks = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
     da->received_message_queue = g_queue_new();
@@ -1530,8 +1530,8 @@ groupme_close(PurpleConnection *pc)
     da->one_to_ones = NULL;
     g_hash_table_unref(da->one_to_ones_rev);
     da->one_to_ones_rev = NULL;
-    //g_hash_table_unref(da->last_message_id_dm);
-    //da->last_message_id_dm = NULL;
+    g_hash_table_unref(da->last_message_id_dm);
+    da->last_message_id_dm = NULL;
     g_hash_table_unref(da->sent_message_ids);
     da->sent_message_ids = NULL;
     g_hash_table_unref(da->result_callbacks);
@@ -2512,17 +2512,49 @@ groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 static void
 groupme_mark_room_messages_read(GroupMeAccount *da, guint64 channel_id)
 {
+#if 0
     if (!channel_id) {
         return;
     }
 
-    guint64 last_message_id = groupme_get_room_last_id(da, channel_id);
+    GroupMeChannel *channel = groupme_get_channel_global_int(da, channel_id);
+
+    guint64 last_message_id;
+
+    if (channel) {
+        last_message_id = channel->last_message_id;
+    } else {
+        gchar *channel = from_int(channel_id);
+        gchar *msg = g_hash_table_lookup(da->last_message_id_dm, channel);
+        g_free(channel);
+
+        if (msg) {
+            last_message_id = to_int(msg);
+        } else {
+            purple_debug_info("groupme", "Unknown acked channel %" G_GUINT64_FORMAT, channel_id);
+            return;
+        }
+    }
+
+    if (last_message_id == 0) {
+        purple_debug_info("groupme", "Won't ack message ID == 0");
+    }
+
+    guint64 known_message_id = groupme_get_room_last_id(da, channel_id);
+
+    if (last_message_id == known_message_id) {
+        /* Up to date */
+        return;
+    }
+
+    groupme_set_room_last_id(da, channel_id, last_message_id);
 
     gchar *url;
 
     url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages/%" G_GUINT64_FORMAT "/ack", channel_id, last_message_id);
     groupme_fetch_url(da, url, "{\"token\":null}", NULL, NULL);
     g_free(url);
+#endif
 }
 
 static void
