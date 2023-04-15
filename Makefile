@@ -1,10 +1,10 @@
 
-PIDGIN_TREE_TOP ?= ../pidgin-2.14.10
+PIDGIN_TREE_TOP ?= ../pidgin-2.14.12
 PIDGIN3_TREE_TOP ?= ../pidgin-main
 LIBPURPLE_DIR ?= $(PIDGIN_TREE_TOP)/libpurple
 WIN32_DEV_TOP ?= $(PIDGIN_TREE_TOP)/../win32-dev
 
-WIN32_CC ?= $(WIN32_DEV_TOP)/mingw-4.7.2/bin/mingw32-gcc
+WIN32_CC ?= $(WIN32_DEV_TOP)/mingw-gcc-4.7.2/bin/gcc
 
 PROTOC_C ?= protoc-c
 PKG_CONFIG ?= pkg-config
@@ -81,8 +81,8 @@ else
   endif
 endif
 
-WIN32_CFLAGS = -std=c99 -I$(WIN32_DEV_TOP)/glib-2.28.8/include -I$(WIN32_DEV_TOP)/glib-2.28.8/include/glib-2.0 -I$(WIN32_DEV_TOP)/glib-2.28.8/lib/glib-2.0/include -I$(WIN32_DEV_TOP)/json-glib-0.14/include/json-glib-1.0 -DENABLE_NLS -DGROUPME_PLUGIN_VERSION='"$(PLUGIN_VERSION)"' -Wall -Wextra -Wno-deprecated-declarations -Wno-unused-parameter -fno-strict-aliasing -Wformat
-WIN32_LDFLAGS = -L$(WIN32_DEV_TOP)/glib-2.28.8/lib -L$(WIN32_DEV_TOP)/json-glib-0.14/lib -lpurple -lintl -lglib-2.0 -lgobject-2.0 -ljson-glib-1.0 -g -ggdb -static-libgcc -lz
+WIN32_CFLAGS = -std=c99 -I$(WIN32_DEV_TOP)/glib-2.28.8/include -I$(WIN32_DEV_TOP)/gtk_2_0-2.14/include -I$(WIN32_DEV_TOP)/glib-2.28.8/include/glib-2.0 -I$(WIN32_DEV_TOP)/glib-2.28.8/lib/glib-2.0/include -I$(WIN32_DEV_TOP)/json-glib-0.14/include/json-glib-1.0 -DENABLE_NLS -DGROUPME_PLUGIN_VERSION='"$(PLUGIN_VERSION)"' -Wall -Wextra -Wno-deprecated-declarations -Wno-unused-parameter -fno-strict-aliasing -Wformat
+WIN32_LDFLAGS = -L$(WIN32_DEV_TOP)/glib-2.28.8/lib -L$(WIN32_DEV_TOP)/gtk_2_0-2.14/lib -L$(WIN32_DEV_TOP)/json-glib-0.14/lib -lpurple -lintl -lglib-2.0 -lgobject-2.0 -ljson-glib-1.0 -g -ggdb -static-libgcc -lz
 WIN32_PIDGIN2_CFLAGS = -I$(PIDGIN_TREE_TOP)/libpurple -I$(PIDGIN_TREE_TOP) $(WIN32_CFLAGS)
 WIN32_PIDGIN3_CFLAGS = -I$(PIDGIN3_TREE_TOP)/libpurple -I$(PIDGIN3_TREE_TOP) -I$(WIN32_DEV_TOP)/gplugin-dev/gplugin $(WIN32_CFLAGS)
 WIN32_PIDGIN2_LDFLAGS = -L$(PIDGIN_TREE_TOP)/libpurple $(WIN32_LDFLAGS)
