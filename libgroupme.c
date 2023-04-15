@@ -173,12 +173,6 @@ groupme_chat_hash(guint64 chat_id)
     return ABS((gint) chat_id);
 }
 
-static gboolean
-groupme_chat_equal(guint64 a, guint64 b)
-{
-    return ((gboolean)(groupme_chat_hash(a) == groupme_chat_hash(b)));
-}
-
 static void groupme_free_guild_membership(gpointer data);
 
 /* creating */
@@ -205,7 +199,7 @@ groupme_new_user(JsonObject *json)
     user->name = g_strdup(user->name);
     user->id_s = g_strdup(user->id_s);
 
-    user->guild_memberships = g_hash_table_new_full(groupme_chat_hash, g_int64_equal, NULL, groupme_free_guild_membership);
+    user->guild_memberships = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, groupme_free_guild_membership);
 
     return user;
 }
@@ -220,7 +214,7 @@ groupme_new_guild(JsonObject *json)
     guild->icon = g_strdup(json_object_get_string_member(json, "image_url"));
     guild->members = g_array_new(TRUE, TRUE, sizeof(guint64));
 
-    guild->nicknames = g_hash_table_new_full(groupme_chat_hash, g_int64_equal, NULL, g_free);
+    guild->nicknames = g_hash_table_new_full(g_int64_hash, g_int64_equal, NULL, g_free);
     guild->nicknames_rev = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
     return guild;
 }
@@ -2657,7 +2651,7 @@ groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gch
 
     gchar *rid = from_int(room_id);
 
-        gchar *uuid = purple_uuid_random();
+        gchar *uuid = g_uuid_string_random();
         gchar *guid = g_strdup_printf("groupme-min-%s", uuid);
         g_free(uuid);
 
