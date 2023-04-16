@@ -82,6 +82,12 @@ typedef struct {
 } GroupMeGuild;
 
 typedef struct {
+    guint64 requested_items;
+    guint64 person_id;
+    GroupMeGuild *channel;
+} HistoryData;
+
+typedef struct {
     guint64 id;
     gchar *nick;
     gboolean is_op;
@@ -193,8 +199,25 @@ groupme_new_user(JsonObject *json)
 
     if (!user->name)
         user->name = json_object_get_string_member(json, "name");
+    
+    if (!user->name)
+        user->name = g_strdup(user->name);
 
-    user->avatar = g_strdup(json_object_get_string_member(json, "avatar_url"));
+    purple_debug_info("groupme", "Setting name for user %" G_GUINT64_FORMAT
+            " to %s.\n", (guint64)user->id, user->name);
+
+    user->avatar = json_object_get_string_member(json, "image_url");
+
+    if (!user->avatar)
+        user->avatar = json_object_get_string_member(json, "avatar_url");
+
+    if (!user->avatar)
+        user->avatar = g_strdup(user->avatar);
+
+    purple_debug_info("groupme", "Setting image for user %" G_GUINT64_FORMAT
+            " to %s.\n", (guint64)user->id, user->avatar);
+
+
 
     user->name = g_strdup(user->name);
     user->id_s = g_strdup(user->id_s);
@@ -315,8 +338,10 @@ groupme_got_handshake(GroupMeAccount *da, JsonNode *node, gpointer user_data)
                     "{\"channel\": \"/meta/subscribe\", \"clientId\": \"%s\", \"subscription\": \"/user/%" G_GUINT64_FORMAT "\", \"ext\": {\"timestamp\": %" G_GUINT64_FORMAT ", \"access_token\": \"%s\"}, \"id\": 2}",
                     clientId,
                     da->self_user_id,
-                    time(NULL),
-                    da->token);
+                    ((guint64)time(NULL)),
+                    da->token
+                    );
+
 
             da->push_id = 3;
 
@@ -657,7 +682,12 @@ groupme_fetch_url_with_method(GroupMeAccount *ya, const gchar *method, const gch
         url = g_strdup_printf("%s&token=%s", _url, ya->token);
     }
 
-    purple_debug_info("groupme", "Fetching url %s\n", url);
+    if (strstr(url, "token")) {
+        purple_debug_info("groupme", "Fetching url ### REDACTED ###\n", url);
+    } else {
+        purple_debug_info("groupme", "Fetching url %s\n", url);
+    }
+
 
 #if PURPLE_VERSION_CHECK(3, 0, 0)
 
@@ -669,6 +699,8 @@ groupme_fetch_url_with_method(GroupMeAccount *ya, const gchar *method, const gch
 
     if (postdata) {
         if (strstr(url, "/login") && strstr(postdata, "password")) {
+            purple_debug_info("groupme", "With postdata ###PASSWORD REMOVED###\n");
+        } else if (strstr(postdata, "access_token")) {
             purple_debug_info("groupme", "With postdata ###PASSWORD REMOVED###\n");
         } else {
             purple_debug_info("groupme", "With postdata %s\n", postdata);
@@ -708,6 +740,8 @@ groupme_fetch_url_with_method(GroupMeAccount *ya, const gchar *method, const gch
 
     if (postdata) {
         if (strstr(url, "/login") && strstr(postdata, "password")) {
+            purple_debug_info("groupme", "With postdata ###PASSWORD REMOVED###\n");
+        } else if (strstr(postdata, "access_token")) {
             purple_debug_info("groupme", "With postdata ###PASSWORD REMOVED###\n");
         } else {
             purple_debug_info("groupme", "With postdata %s\n", postdata);
@@ -883,7 +917,10 @@ groupme_create_associate(GroupMeAccount *da, guint64 id)
             return;
         }
 
+        purple_debug_info("Associating new buddy %s with name %s.\n",
+                id_s, user->name);
         buddy = purple_buddy_new(da->account, id_s, user->name);
+
         purple_blist_add_buddy(buddy, NULL, groupme_get_or_create_group("GroupMe"), NULL);
 
         /* Bring it up */
@@ -946,7 +983,7 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
 
     /* Drop our own messages that were pinged back to us */
 	if ((author_id == da->self_user_id) && g_hash_table_remove(da->sent_message_ids, guid))
-		return;
+		return 0;
 
     if (author_id == da->self_user_id && is_dm) {
         flags = PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED;
@@ -991,6 +1028,9 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
             }
         } else {
             GroupMeUser *author = groupme_upsert_user(da->new_users, data);
+            if (author) {
+                groupme_create_associate(da, author->id);
+            }
             gchar *merged_username = author->id_s;
 
             if (content && *content) {
@@ -1114,10 +1154,12 @@ groupme_bring_up_buddies(PurpleAccount *account)
     PurpleBlistNode *node;
     GSList *lst = purple_find_buddies(account, NULL);
 
+
     while (lst) {
         PurpleBuddy *buddy = (PurpleBuddy *) lst->data;
         purple_protocol_got_user_status(account, buddy->name, "online", NULL);
-        purple_protocol_got_user_idle(account, buddy->name, 0, 0);
+        // Don't know if I want to immediately set people idle TODO
+        //purple_protocol_got_user_idle(account, buddy->name, 0, 0);
         lst = g_slist_delete_link(lst, lst);
     }
 
@@ -1294,6 +1336,9 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
         JsonObject *member = json_array_get_object_element(members, j);
 
         GroupMeUser *u = groupme_upsert_user(da->new_users, member);
+        if (u) {
+            groupme_create_associate(da, u->id);
+        }
         g_array_append_val(g->members, u->id);
 
         GroupMeGuildMembership *membership = groupme_new_guild_membership(g->id, member);
@@ -1330,8 +1375,14 @@ groupme_got_chats(GroupMeAccount *da, JsonNode *node, gpointer user_data)
         const gchar *chan = json_object_get_string_member(other, "id");
 
         /* TODO: Actually fetch history, rolling, save counts, etc */
-        groupme_upsert_user(da->new_users, other);
-        groupme_process_message(da, to_int(chan), msg, TRUE);
+        GroupMeUser *subject = groupme_upsert_user(da->new_users, other);
+        if (subject) {
+            groupme_create_associate(da, subject->id);
+        }
+        // Drop "historical" chats on the floor
+        // Not my favorite, but better than closing 15 windows on startup
+        // -- Dan Haskin, 2023-04-16
+        //groupme_process_message(da, to_int(chan), msg, TRUE);
     }
 }
 
@@ -1401,6 +1452,7 @@ groupme_login_response(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
 
         da->token = g_strdup(json_object_get_string_member(response, "token"));
+        purple_debug_info("groupme", "Token set to token from response.\n");
 
         purple_account_set_string(da->account, "token", da->token);
 
@@ -1480,6 +1532,7 @@ groupme_login(PurpleAccount *account)
 
     const gchar *dev_token = purple_connection_get_password(da->pc);
     da->token = g_strdup(dev_token);
+    purple_debug_info("groupme", "Token set.\n");
 
     /* Test the REST API */
     groupme_fetch_url(da, "https://" GROUPME_API_SERVER "/users/me?", NULL, groupme_got_self, NULL);
@@ -1558,6 +1611,7 @@ groupme_close(PurpleConnection *pc)
     da->frame = NULL;
     g_free(da->token);
     da->token = NULL;
+    purple_debug_info("groupme", "Token unset.\n");
     g_free(da->session_id);
     da->session_id = NULL;
     g_free(da->self_username);
@@ -1953,7 +2007,7 @@ static void
 groupme_start_socket(GroupMeAccount *da)
 {
 #ifdef USE_LONG_POLL
-    purple_debug_info("groupme", "Starting long poll.")
+    purple_debug_info("groupme", "Starting long poll.\n");
     /* Set to the empircal timeout for the push server.
      * Hack, maybe? Or is this just what one does? I don't know. Please help!
      * I have no idea what I'm doing.
@@ -1984,7 +2038,7 @@ groupme_start_socket(GroupMeAccount *da)
     da->packet_code = 0;
     da->frame_len = 0;
     da->frames_since_reconnect = 0;
-    purple_debug_info("groupme", "Starting web socket.")
+    purple_debug_info("groupme", "Starting web socket.\n");
     da->websocket = purple_ssl_connect(da->account, GROUPME_GATEWAY_SERVER, GROUPME_GATEWAY_PORT, groupme_socket_connected, groupme_socket_failed, da);
 #endif
 }
@@ -2202,14 +2256,13 @@ static void groupme_set_room_last_id(GroupMeAccount *da, guint64 channel_id, gui
 static void
 groupme_got_history_of_im(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
+    HistoryData *d = user_data;
     JsonObject *container = json_node_get_object(node);
     JsonObject *resp = json_object_get_object_member(container, "response");
     JsonArray *messages = json_object_get_array_member(resp, "direct_messages");
 
     gint i, len = json_array_get_length(messages);
     guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
-    guint64 rolling_last_message_id = 0;
-
     /* latest are first */
     for (i = len - 1; i >= 0; i--) {
         JsonObject *message = json_array_get_object_element(messages, i);
@@ -2218,32 +2271,34 @@ groupme_got_history_of_im(GroupMeAccount *da, JsonNode *node, gpointer user_data
         int rid = to_int(json_object_get_string_member(message, "recipient_id"));
 
         /* Sometimes we receive our own messages, account for that */
-        int channel = sid == da->self_user_id ? rid : sid;
-        rolling_last_message_id = groupme_process_message(da, channel, message, TRUE);
+        int channel_id = sid == da->self_user_id ? rid : sid;
+        groupme_process_message(da, d->person_id, message, TRUE);
     }
 
-    if (rolling_last_message_id != 0) {
-        /* ACK HISTORY ACK */
+
 #if 0
-        groupme_set_room_last_id(da, channel->id, rolling_last_message_id);
+        GroupMeGuild *channel = groupme_get_guild(da, channel_id);
+        /* ACK HISTORY ACK */
+        groupme_set_room_last_id(da, channel, rolling_last_message_id);
 
         if (rolling_last_message_id < last_message) {
             /* Request the next 100 messages */
-            gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages?limit=100&after=%" G_GUINT64_FORMAT, channel->id, rolling_last_message_id);
-            groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
+            gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/api/v6/channels/%" G_GUINT64_FORMAT "/messages?limit=100&after=%" G_GUINT64_FORMAT, channel, rolling_last_message_id);
+
+            groupme_fetch_url(da, url, NULL, groupme_got_history_of_im, channel);
             g_free(url);
         }
 #endif
-    }
 }
 static void
 groupme_got_history_of_room(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 {
+    HistoryData *d = user_data;
+    GroupMeGuild *channel = d->channel;
     JsonObject *container = json_node_get_object(node);
     JsonObject *resp = json_object_get_object_member(container, "response");
     JsonArray *messages = json_object_get_array_member(resp, "messages");
 
-    GroupMeGuild *channel = user_data;
     gint i, len = json_array_get_length(messages);
     guint64 last_message = /* channel->last_message_id */ 0 /* XXX */;
     guint64 rolling_last_message_id = 0;
@@ -2418,18 +2473,23 @@ groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *name, gboolean present)
 
 static PurpleCmdRet
 groupme_cmd_history(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer data) {
-
+    guint64 num_messages;
+    if (args && args[0]) {
+        num_messages = 20;
+    } else {
+        num_messages = to_int(args[0]);
+    }
 
     PurpleConnection *pc = purple_conversation_get_connection(conv);
     if (pc == NULL) {
-        printf("Conversation was not found.\n");
+        purple_debug_warning("groupme", "Conversation was not found.\n");
         return PURPLE_CMD_RET_FAILED;
     }
 
     GroupMeAccount *da = purple_connection_get_protocol_data(pc);
 
     if (da == NULL) {
-        printf("Account was not found.\n");
+        purple_debug_warning("groupme", "Account was not found.\n");
         return PURPLE_CMD_RET_FAILED;
     }
 
@@ -2446,28 +2506,38 @@ groupme_cmd_history(PurpleConversation *conv, const gchar *cmd, gchar **args, gc
                 "/direct_messages?other_user_id=%"
                 G_GUINT64_FORMAT,
                 person_id);
+
+
+        HistoryData *d = g_new0(HistoryData, 1);
+        d->person_id = person_id;
+        d->channel = NULL;
+        d->requested_items = num_messages;
         groupme_fetch_url(da,
-                url, NULL, groupme_got_history_of_im, NULL);
+                url, NULL, groupme_got_history_of_im, d);
         g_free(url);
     } else if (conv->type == PURPLE_CONV_TYPE_CHAT) {
         int id = purple_chat_conversation_get_id(PURPLE_CHAT_CONVERSATION(conv));
 
         if (id == -1) {
-            printf("Purple chat was not found.\n");
+            purple_debug_error("groupme", "Purple chat was not found.\n");
             return PURPLE_CMD_RET_FAILED;
         }
 
         GroupMeGuild *channel = groupme_get_guild(da, id);
         if (channel == NULL) {
-            printf("Channel was not found.\n");
+            purple_debug_error("groupme", "Channel was not found.\n");
             return PURPLE_CMD_RET_FAILED;
         }
         gchar *url = g_strdup_printf(
                 "https://"
                 GROUPME_API_SERVER
                 "/groups/%" G_GUINT64_FORMAT
-                "/messages?limit=%" G_GUINT64_FORMAT, id, to_int(args[0]));
-        groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
+                "/messages?limit=%" G_GUINT64_FORMAT, id, num_messages);
+        HistoryData *d = g_new0(HistoryData, 1);
+        d->person_id = 0;
+        d->channel = channel;
+        d->requested_items = num_messages;
+        groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, d);
         g_free(url);
     } else {
         printf("Purple conversation type was not found.\n");
@@ -2500,9 +2570,13 @@ groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata)
         g_free(url);
     }
 #endif
-
+    HistoryData *d = g_new0(HistoryData, 1);
+    d->person_id = 0;
+    d->channel = channel;
+    d->requested_items = 20;
+    
     gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/groups/%" G_GUINT64_FORMAT "/messages?limit=100", id);
-    groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, channel);
+    groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, d);
 }
 
 static void
@@ -2837,8 +2911,10 @@ groupme_get_avatar(GroupMeAccount *da, GroupMeUser *user)
     /* Disable token for image requests */
     gchar *token = da->token;
     da->token = NULL;
+    purple_debug_info("groupme", "Token unset.\n");
     groupme_fetch_url(da, user->avatar, NULL, groupme_got_avatar, user);
     da->token = token;
+    purple_debug_info("groupme", "Token set.\n");
 }
 
 static void
