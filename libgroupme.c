@@ -1694,7 +1694,7 @@ groupme_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInpu
     guchar length_code;
     int read_len = 0;
     gboolean done_some_reads = FALSE;
-    printf("ws got data\n");
+    purple_debug_info("groupme", "ws got data\n");
 
     if (G_UNLIKELY(!ya->websocket_header_received)) {
         gint nlbr_count = 0;
@@ -1953,6 +1953,7 @@ static void
 groupme_start_socket(GroupMeAccount *da)
 {
 #ifdef USE_LONG_POLL
+    purple_debug_info("groupme", "Starting long poll.")
     /* Set to the empircal timeout for the push server.
      * Hack, maybe? Or is this just what one does? I don't know. Please help!
      * I have no idea what I'm doing.
@@ -1962,10 +1963,10 @@ groupme_start_socket(GroupMeAccount *da)
 		purple_timeout_remove(da->long_poller);
 		da->long_poller = 0;
     }
-	//da->long_poller = purple_timeout_add_seconds(60, long_poll, da);
+    // Timeout for it is 600 000 milliseconds.
+	da->long_poller = purple_timeout_add_seconds(600, long_poll, da);
     groupme_init_push(da);
-    return;
-#endif
+#else
 
     if (da->heartbeat_timeout) {
         g_source_remove(da->heartbeat_timeout);
@@ -1983,8 +1984,9 @@ groupme_start_socket(GroupMeAccount *da)
     da->packet_code = 0;
     da->frame_len = 0;
     da->frames_since_reconnect = 0;
-
+    purple_debug_info("groupme", "Starting web socket.")
     da->websocket = purple_ssl_connect(da->account, GROUPME_GATEWAY_SERVER, GROUPME_GATEWAY_PORT, groupme_socket_connected, groupme_socket_failed, da);
+#endif
 }
 
 static void
@@ -2651,7 +2653,8 @@ groupme_conversation_send_message(GroupMeAccount *da, guint64 room_id, const gch
 
     gchar *rid = from_int(room_id);
 
-        gchar *uuid = g_uuid_string_random();
+        //gchar *uuid = g_uuid_string_random();
+        gchar *uuid = purple_uuid_random();
         gchar *guid = g_strdup_printf("groupme-min-%s", uuid);
         g_free(uuid);
 
