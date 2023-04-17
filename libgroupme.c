@@ -199,8 +199,8 @@ groupme_new_user(JsonObject *json)
 
     if (!user->name)
         user->name = json_object_get_string_member(json, "name");
-    
-    if (!user->name)
+
+    if (user->name)
         user->name = g_strdup(user->name);
 
     purple_debug_info("groupme", "Setting name for user %" G_GUINT64_FORMAT
@@ -211,7 +211,7 @@ groupme_new_user(JsonObject *json)
     if (!user->avatar)
         user->avatar = json_object_get_string_member(json, "avatar_url");
 
-    if (!user->avatar)
+    if (user->avatar)
         user->avatar = g_strdup(user->avatar);
 
     purple_debug_info("groupme", "Setting image for user %" G_GUINT64_FORMAT
@@ -1562,7 +1562,7 @@ groupme_close(PurpleConnection *pc)
     if (da->heartbeat_timeout) {
         g_source_remove(da->heartbeat_timeout);
     }
-    
+
     if (da->long_poller) {
 		purple_timeout_remove(da->long_poller);
 		da->long_poller = 0;
@@ -2574,7 +2574,7 @@ groupme_join_chat(PurpleConnection *pc, GHashTable *chatdata)
     d->person_id = 0;
     d->channel = channel;
     d->requested_items = 20;
-    
+
     gchar *url = g_strdup_printf("https://" GROUPME_API_SERVER "/groups/%" G_GUINT64_FORMAT "/messages?limit=100", id);
     groupme_fetch_url(da, url, NULL, groupme_got_history_of_room, d);
 }
