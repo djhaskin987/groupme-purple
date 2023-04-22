@@ -46,7 +46,7 @@
 
 #define GROUPME_PLUGIN_ID "prpl-alyssarosenzweig-groupme"
 #ifndef GROUPME_PLUGIN_VERSION
-#define GROUPME_PLUGIN_VERSION "0.1"
+#define GROUPME_PLUGIN_VERSION "0.90.0"
 #endif
 #define GROUPME_PLUGIN_WEBSITE "https://notabug.com/alyssa/groupme-purple"
 
@@ -902,6 +902,9 @@ static GroupMeGuild *groupme_open_chat(GroupMeAccount *da, guint64 id, gchar *na
 static void
 groupme_create_associate(GroupMeAccount *da, guint64 id)
 {
+    if (id == 0) {
+        return;
+    }
     gchar *id_s = from_int(id);
 
     /* First, check to see if we already are associated */

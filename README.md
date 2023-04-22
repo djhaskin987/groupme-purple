@@ -14,14 +14,13 @@ Works well enough for me :)
   get your access token from the top right of the page. That's going to be your
   password when you use this pidgin plugin.
 
-- Plugin plugin currently doesn't know how to make "nice" usernames. I get
+- In older versions, the plugin didn't know how to make "nice" usernames. I got
   around this by double-clicking on someone's name from a group chat, and when
   their DM window comes up, I choose "File" -> "Alias..." And set an alias for
   the user. After that they show up under "Buddies" and I can DM them.
 
-- Heretofore, messages weren't acknowledged as read unless you replied to the
-  message. This most recent release should (hopefully) mitigate this sour
-  problem.
+- To get around an issue where tons of consoles came up upon log-in, previous
+  messages from different IMs are NOT displayed initially.
 
 ## Get It To Work on Windows
 
