@@ -1031,7 +1031,7 @@ groupme_process_message(GroupMeAccount *da, int channel, JsonObject *data, gbool
             }
         } else {
             GroupMeUser *author = groupme_upsert_user(da->new_users, data);
-            if (author) {
+            if (author && author->id > 0) {
                 groupme_create_associate(da, author->id);
             }
             gchar *merged_username = author->id_s;
@@ -1339,7 +1339,7 @@ groupme_populate_guild(GroupMeAccount *da, JsonObject *guild)
         JsonObject *member = json_array_get_object_element(members, j);
 
         GroupMeUser *u = groupme_upsert_user(da->new_users, member);
-        if (u) {
+        if (u && u->id > 0) {
             groupme_create_associate(da, u->id);
         }
         g_array_append_val(g->members, u->id);
@@ -1379,7 +1379,7 @@ groupme_got_chats(GroupMeAccount *da, JsonNode *node, gpointer user_data)
 
         /* TODO: Actually fetch history, rolling, save counts, etc */
         GroupMeUser *subject = groupme_upsert_user(da->new_users, other);
-        if (subject) {
+        if (subject && subject->id > 0) {
             groupme_create_associate(da, subject->id);
         }
         // Drop "historical" chats on the floor
