@@ -24,7 +24,7 @@ else
 PLUGIN_VERSION ?= 0.9.$(shell date +%Y.%m.%d)
 endif
 
-CFLAGS	?= -O2 -g -pipe -Wall
+CFLAGS	?= -O2 -g -pipe -Wall -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include
 LDFLAGS ?= -Wl,-z,relro
 
 CFLAGS  += -std=c99 -DGROUPME_PLUGIN_VERSION='"$(PLUGIN_VERSION)"'
